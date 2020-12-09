@@ -50,7 +50,7 @@ static int intel_dp_mst_compute_link_config(struct intel_encoder *encoder,
 	const struct drm_display_mode *adjusted_mode =
 		&crtc_state->base.adjusted_mode;
 	void *port = connector->port;
-	bool constant_n = drm_dp_has_quirk(&intel_dp->desc,
+	bool constant_n = drm_dp_has_quirk(&intel_dp->desc, 0,
 					   DP_DPCD_QUIRK_CONSTANT_N);
 	int bpp, slots = -EINVAL;
 
@@ -653,21 +653,31 @@ intel_dp_mst_encoder_active_links(struct intel_digital_port *intel_dig_port)
 int
 intel_dp_mst_encoder_init(struct intel_digital_port *intel_dig_port, int conn_base_id)
 {
+	struct drm_i915_private *i915 = to_i915(intel_dig_port->base.base.dev);
 	struct intel_dp *intel_dp = &intel_dig_port->dp;
-	struct drm_device *dev = intel_dig_port->base.base.dev;
+	enum port port = intel_dig_port->base.port;
 	int ret;
 
-	intel_dp->can_mst = true;
+	if (!HAS_DP_MST(i915) || intel_dp_is_edp(intel_dp))
+		return 0;
+
+	if (INTEL_GEN(i915) < 12 && port == PORT_A)
+		return 0;
+
+	if (INTEL_GEN(i915) < 11 && port == PORT_E)
+		return 0;
+
 	intel_dp->mst_mgr.cbs = &mst_cbs;
 
 	/* create encoders */
 	intel_dp_create_fake_mst_encoders(intel_dig_port);
-	ret = drm_dp_mst_topology_mgr_init(&intel_dp->mst_mgr, dev,
+	ret = drm_dp_mst_topology_mgr_init(&intel_dp->mst_mgr, &i915->drm,
 					   &intel_dp->aux, 16, 3, conn_base_id);
-	if (ret) {
-		intel_dp->can_mst = false;
+	if (ret)
 		return ret;
-	}
+
+	intel_dp->can_mst = true;
+
 	return 0;
 }
 

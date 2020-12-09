@@ -36,7 +36,7 @@ const struct in6_addr addr6 = IN6ADDR_LOOPBACK_INIT;
 static int payload_len;
 static int max_frag_len;
 
-#define MSG_LEN_MAX	10000	/* Max UDP payload length. */
+#define MSG_LEN_MAX	8000	/* Max UDP payload length. */
 
 #define IP4_MF		(1u << 13)  /* IPv4 MF flag. */
 #define IP6_MF		(1)  /* IPv6 MF flag. */
@@ -192,9 +192,9 @@ static void send_fragment(int fd_raw, struct sockaddr *addr, socklen_t alen,
 	}
 
 	res = sendto(fd_raw, ip_frame, frag_len, 0, addr, alen);
-	if (res < 0)
+	if (res < 0 && errno != EPERM)
 		error(1, errno, "send_fragment");
-	if (res != frag_len)
+	if (res >= 0 && res != frag_len)
 		error(1, 0, "send_fragment: %d vs %d", res, frag_len);
 
 	frag_counter++;
@@ -313,9 +313,9 @@ static void send_udp_frags(int fd_raw, struct sockaddr *addr,
 			iphdr->ip_len = htons(frag_len);
 		}
 		res = sendto(fd_raw, ip_frame, frag_len, 0, addr, alen);
-		if (res < 0)
+		if (res < 0 && errno != EPERM)
 			error(1, errno, "sendto overlap: %d", frag_len);
-		if (res != frag_len)
+		if (res >= 0 && res != frag_len)
 			error(1, 0, "sendto overlap: %d vs %d", (int)res, frag_len);
 		frag_counter++;
 	}

@@ -60,9 +60,9 @@ static int cachefiles_read_waiter(wait_queue_entry_t *wait, unsigned mode,
 	object = container_of(op->op.object, struct cachefiles_object, fscache);
 	spin_lock(&object->work_lock);
 	list_add_tail(&monitor->op_link, &op->to_do);
+	fscache_enqueue_retrieval(op);
 	spin_unlock(&object->work_lock);
 
-	fscache_enqueue_retrieval(op);
 	fscache_put_retrieval(op);
 	return 0;
 }
@@ -507,6 +507,8 @@ static int cachefiles_read_backing_file(struct cachefiles_object *object,
 				goto installed_new_backing_page;
 			if (ret != -EEXIST)
 				goto nomem;
+			put_page(newpage);
+			newpage = NULL;
 		}
 
 		/* we've installed a new backing page, so now we need

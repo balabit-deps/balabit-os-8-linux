@@ -6753,20 +6753,30 @@ intel_aux_power_domain(struct intel_digital_port *dig_port)
 	    dig_port->tc_mode == TC_PORT_TBT_ALT) {
 		switch (dig_port->aux_ch) {
 		case AUX_CH_C:
-			return POWER_DOMAIN_AUX_TBT1;
+			return POWER_DOMAIN_AUX_C_TBT;
 		case AUX_CH_D:
-			return POWER_DOMAIN_AUX_TBT2;
+			return POWER_DOMAIN_AUX_D_TBT;
 		case AUX_CH_E:
-			return POWER_DOMAIN_AUX_TBT3;
+			return POWER_DOMAIN_AUX_E_TBT;
 		case AUX_CH_F:
-			return POWER_DOMAIN_AUX_TBT4;
+			return POWER_DOMAIN_AUX_F_TBT;
 		default:
 			MISSING_CASE(dig_port->aux_ch);
-			return POWER_DOMAIN_AUX_TBT1;
+			return POWER_DOMAIN_AUX_C_TBT;
 		}
 	}
 
-	switch (dig_port->aux_ch) {
+	return intel_legacy_aux_to_power_domain(dig_port->aux_ch);
+}
+
+/*
+ * Converts aux_ch to power_domain without caring about TBT ports for that use
+ * intel_aux_power_domain()
+ */
+enum intel_display_power_domain
+intel_legacy_aux_to_power_domain(enum aux_ch aux_ch)
+{
+	switch (aux_ch) {
 	case AUX_CH_A:
 		return POWER_DOMAIN_AUX_A;
 	case AUX_CH_B:
@@ -6780,7 +6790,7 @@ intel_aux_power_domain(struct intel_digital_port *dig_port)
 	case AUX_CH_F:
 		return POWER_DOMAIN_AUX_F;
 	default:
-		MISSING_CASE(dig_port->aux_ch);
+		MISSING_CASE(aux_ch);
 		return POWER_DOMAIN_AUX_A;
 	}
 }
@@ -10510,7 +10520,7 @@ static u32 intel_cursor_base(const struct intel_plane_state *plane_state)
 	u32 base;
 
 	if (INTEL_INFO(dev_priv)->display.cursor_needs_physical)
-		base = obj->phys_handle->busaddr;
+		base = sg_dma_address(obj->mm.pages->sgl);
 	else
 		base = intel_plane_ggtt_offset(plane_state);
 
@@ -14429,7 +14439,7 @@ intel_prepare_plane_fb(struct drm_plane *plane,
 		return ret;
 
 	fb_obj_bump_render_priority(obj);
-	intel_frontbuffer_flush(obj->frontbuffer, ORIGIN_DIRTYFB);
+	i915_gem_object_flush_frontbuffer(obj, ORIGIN_DIRTYFB);
 
 	if (!new_state->fence) { /* implicit fencing */
 		struct dma_fence *fence;
@@ -16860,8 +16870,11 @@ get_encoder_power_domains(struct drm_i915_private *dev_priv)
 
 static void intel_early_display_was(struct drm_i915_private *dev_priv)
 {
-	/* Display WA #1185 WaDisableDARBFClkGating:cnl,glk */
-	if (IS_CANNONLAKE(dev_priv) || IS_GEMINILAKE(dev_priv))
+	/*
+	 * Display WA #1185 WaDisableDARBFClkGating:cnl,glk,icl,ehl,tgl
+	 * Also known as Wa_14010480278.
+	 */
+	if (IS_GEN_RANGE(dev_priv, 10, 12) || IS_GEMINILAKE(dev_priv))
 		I915_WRITE(GEN9_CLKGATE_DIS_0, I915_READ(GEN9_CLKGATE_DIS_0) |
 			   DARBF_GATING_DIS);
 

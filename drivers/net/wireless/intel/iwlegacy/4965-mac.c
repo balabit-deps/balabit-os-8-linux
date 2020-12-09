@@ -2265,7 +2265,7 @@ il4965_tx_agg_start(struct il_priv *il, struct ieee80211_vif *vif,
 	if (tid_data->tfds_in_queue == 0) {
 		D_HT("HW queue is empty\n");
 		tid_data->agg.state = IL_AGG_ON;
-		ieee80211_start_tx_ba_cb_irqsafe(vif, sta->addr, tid);
+		ret = IEEE80211_AMPDU_TX_START_IMMEDIATE;
 	} else {
 		D_HT("HW queue is NOT empty: %d packets in HW queue\n",
 		     tid_data->tfds_in_queue);
@@ -4344,8 +4344,9 @@ il4965_synchronize_irq(struct il_priv *il)
 }
 
 static void
-il4965_irq_tasklet(struct il_priv *il)
+il4965_irq_tasklet(unsigned long data)
 {
+	struct il_priv *il = (struct il_priv *)data;
 	u32 inta, handled = 0;
 	u32 inta_fh;
 	unsigned long flags;
@@ -6238,7 +6239,7 @@ il4965_setup_deferred_work(struct il_priv *il)
 	timer_setup(&il->watchdog, il_bg_watchdog, 0);
 
 	tasklet_init(&il->irq_tasklet,
-		     (void (*)(unsigned long))il4965_irq_tasklet,
+		     il4965_irq_tasklet,
 		     (unsigned long)il);
 }
 

@@ -516,7 +516,11 @@ static int really_probe(struct device *dev, struct device_driver *drv)
 	atomic_inc(&probe_count);
 	pr_debug("bus: '%s': %s: probing driver %s with device %s\n",
 		 drv->bus->name, __func__, drv->name, dev_name(dev));
-	WARN_ON(!list_empty(&dev->devres_head));
+	if (!list_empty(&dev->devres_head)) {
+		dev_crit(dev, "Resources present before probing\n");
+		ret = -EBUSY;
+		goto done;
+	}
 
 re_probe:
 	dev->driver = drv;
@@ -636,7 +640,7 @@ pinctrl_bind_failed:
 	ret = 0;
 done:
 	atomic_dec(&probe_count);
-	wake_up(&probe_waitqueue);
+	wake_up_all(&probe_waitqueue);
 	return ret;
 }
 
@@ -869,7 +873,9 @@ static int __device_attach(struct device *dev, bool allow_async)
 	int ret = 0;
 
 	device_lock(dev);
-	if (dev->driver) {
+	if (dev->p->dead) {
+		goto out_unlock;
+	} else if (dev->driver) {
 		if (device_is_bound(dev)) {
 			ret = 1;
 			goto out_unlock;
@@ -1132,6 +1138,13 @@ static void __device_release_driver(struct device *dev, struct device *parent)
 			dev->bus->remove(dev);
 		else if (drv->remove)
 			drv->remove(dev);
+		/*
+		 * A concurrent invocation of the same function might
+		 * have released the driver successfully while this one
+		 * was waiting, so check for that.
+		 */
+		if (dev->driver != drv)
+			return;
 
 		device_links_driver_cleanup(dev);
 

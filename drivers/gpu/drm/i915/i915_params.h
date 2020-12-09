@@ -50,7 +50,7 @@ struct drm_printer;
 	param(int, vbt_sdvo_panel_type, -1) \
 	param(int, enable_dc, -1) \
 	param(int, enable_fbc, -1) \
-	param(int, enable_psr, -1) \
+	param(int, enable_psr, 0) \
 	param(int, disable_power_well, -1) \
 	param(int, enable_ips, 1) \
 	param(int, invert_brightness, 0) \
@@ -64,7 +64,7 @@ struct drm_printer;
 	param(int, reset, 2) \
 	param(unsigned int, inject_load_failure, 0) \
 	param(int, fastboot, -1) \
-	param(int, enable_dpcd_backlight, 0) \
+	param(int, enable_dpcd_backlight, -1) \
 	param(char *, force_probe, CONFIG_DRM_I915_FORCE_PROBE) \
 	/* leave bools at the end to not create holes */ \
 	param(bool, alpha_support, IS_ENABLED(CONFIG_DRM_I915_ALPHA_SUPPORT)) \

@@ -166,7 +166,7 @@ struct iwl_rx_completion_desc {
  * @id: queue index
  * @bd: driver's pointer to buffer of receive buffer descriptors (rbd).
  *	Address size is 32 bit in pre-9000 devices and 64 bit in 9000 devices.
- *	In 22560 devices it is a pointer to a list of iwl_rx_transfer_desc's
+ *	In AX210 devices it is a pointer to a list of iwl_rx_transfer_desc's
  * @bd_dma: bus address of buffer of receive buffer descriptors (rbd)
  * @ubd: driver's pointer to buffer of used receive buffer descriptors (rbd)
  * @ubd_dma: physical address of buffer of used receive buffer descriptors (rbd)
@@ -264,7 +264,7 @@ static inline int iwl_queue_inc_wrap(struct iwl_trans *trans, int index)
 static inline __le16 iwl_get_closed_rb_stts(struct iwl_trans *trans,
 					    struct iwl_rxq *rxq)
 {
-	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_22560) {
+	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_AX210) {
 		__le16 *rb_stts = rxq->rb_stts;
 
 		return READ_ONCE(*rb_stts);
@@ -305,7 +305,7 @@ struct iwl_cmd_meta {
 #define IWL_FIRST_TB_SIZE_ALIGN ALIGN(IWL_FIRST_TB_SIZE, 64)
 
 struct iwl_pcie_txq_entry {
-	struct iwl_device_cmd *cmd;
+	void *cmd;
 	struct sk_buff *skb;
 	/* buffer to free after command completes */
 	const void *free_buf;
@@ -513,8 +513,8 @@ struct cont_rec {
  */
 struct iwl_trans_pcie {
 	struct iwl_rxq *rxq;
-	struct iwl_rx_mem_buffer rx_pool[RX_POOL_SIZE];
-	struct iwl_rx_mem_buffer *global_table[RX_POOL_SIZE];
+	struct iwl_rx_mem_buffer *rx_pool;
+	struct iwl_rx_mem_buffer **global_table;
 	struct iwl_rb_allocator rba;
 	union {
 		struct iwl_context_info *ctxt_info;
@@ -573,6 +573,7 @@ struct iwl_trans_pcie {
 	u8 no_reclaim_cmds[MAX_NO_RECLAIM_CMDS];
 	u8 max_tbs;
 	u16 tfd_size;
+	u16 num_rx_bufs;
 
 	enum iwl_amsdu_size rx_buf_size;
 	bool bc_table_dword;
@@ -690,7 +691,7 @@ void iwl_trans_pcie_txq_set_shared_mode(struct iwl_trans *trans, u32 txq_id,
 void iwl_trans_pcie_log_scd_error(struct iwl_trans *trans,
 				  struct iwl_txq *txq);
 int iwl_trans_pcie_tx(struct iwl_trans *trans, struct sk_buff *skb,
-		      struct iwl_device_cmd *dev_cmd, int txq_id);
+		      struct iwl_device_tx_cmd *dev_cmd, int txq_id);
 void iwl_pcie_txq_check_wrptrs(struct iwl_trans *trans);
 int iwl_trans_pcie_send_hcmd(struct iwl_trans *trans, struct iwl_host_cmd *cmd);
 void iwl_pcie_cmdq_reclaim(struct iwl_trans *trans, int txq_id, int idx);
@@ -1111,7 +1112,7 @@ int iwl_trans_pcie_dyn_txq_alloc(struct iwl_trans *trans,
 				 unsigned int timeout);
 void iwl_trans_pcie_dyn_txq_free(struct iwl_trans *trans, int queue);
 int iwl_trans_pcie_gen2_tx(struct iwl_trans *trans, struct sk_buff *skb,
-			   struct iwl_device_cmd *dev_cmd, int txq_id);
+			   struct iwl_device_tx_cmd *dev_cmd, int txq_id);
 int iwl_trans_pcie_gen2_send_hcmd(struct iwl_trans *trans,
 				  struct iwl_host_cmd *cmd);
 void iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans);

@@ -67,7 +67,6 @@ MODULE_FIRMWARE("amdgpu/vega20_sdma1.bin");
 MODULE_FIRMWARE("amdgpu/raven_sdma.bin");
 MODULE_FIRMWARE("amdgpu/picasso_sdma.bin");
 MODULE_FIRMWARE("amdgpu/raven2_sdma.bin");
-MODULE_FIRMWARE("amdgpu/arcturus_sdma.bin");
 MODULE_FIRMWARE("amdgpu/renoir_sdma.bin");
 
 #define SDMA0_POWER_CNTL__ON_OFF_CONDITION_HOLD_TIME_MASK  0x000000F8L
@@ -698,7 +697,7 @@ static void sdma_v4_0_ring_emit_ib(struct amdgpu_ring *ring,
 	unsigned vmid = AMDGPU_JOB_GET_VMID(job);
 
 	/* IB packet must end on a 8 DW boundary */
-	sdma_v4_0_ring_insert_nop(ring, (10 - (lower_32_bits(ring->wptr) & 7)) % 8);
+	sdma_v4_0_ring_insert_nop(ring, (2 - lower_32_bits(ring->wptr)) & 7);
 
 	amdgpu_ring_write(ring, SDMA_PKT_HEADER_OP(SDMA_OP_INDIRECT) |
 			  SDMA_PKT_INDIRECT_HEADER_VMID(vmid & 0xf));
@@ -1579,7 +1578,7 @@ static void sdma_v4_0_ring_pad_ib(struct amdgpu_ring *ring, struct amdgpu_ib *ib
 	u32 pad_count;
 	int i;
 
-	pad_count = (8 - (ib->length_dw & 0x7)) % 8;
+	pad_count = (-ib->length_dw) & 7;
 	for (i = 0; i < pad_count; i++)
 		if (sdma && sdma->burst_nop && (i == 0))
 			ib->ptr[ib->length_dw++] =

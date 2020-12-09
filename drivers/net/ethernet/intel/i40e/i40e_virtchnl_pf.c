@@ -1127,6 +1127,7 @@ static i40e_status i40e_config_vf_promiscuous_mode(struct i40e_vf *vf,
 	struct i40e_pf *pf = vf->pf;
 	struct i40e_hw *hw = &pf->hw;
 	struct i40e_mac_filter *f;
+	struct hlist_node *h;
 	i40e_status aq_ret = 0;
 	struct i40e_vsi *vsi;
 	int bkt;
@@ -1166,7 +1167,8 @@ static i40e_status i40e_config_vf_promiscuous_mode(struct i40e_vf *vf,
 		}
 		return aq_ret;
 	} else if (i40e_getnum_vf_vsi_vlan_filters(vsi)) {
-		hash_for_each(vsi->mac_filter_hash, bkt, f, hlist) {
+		spin_lock_bh(&vsi->mac_filter_hash_lock);
+		hash_for_each_safe(vsi->mac_filter_hash, bkt, h, f, hlist) {
 			if (f->vlan < 0 || f->vlan > I40E_MAX_VLANID)
 				continue;
 			aq_ret = i40e_aq_set_vsi_mc_promisc_on_vlan(hw,
@@ -1199,6 +1201,7 @@ static i40e_status i40e_config_vf_promiscuous_mode(struct i40e_vf *vf,
 					i40e_aq_str(&pf->hw, aq_err));
 			}
 		}
+		spin_unlock_bh(&vsi->mac_filter_hash_lock);
 		return aq_ret;
 	}
 	aq_ret = i40e_aq_set_vsi_multicast_promiscuous(hw, vsi->seid, allmulti,
@@ -2323,6 +2326,22 @@ static int i40e_ctrl_vf_rx_rings(struct i40e_vsi *vsi, unsigned long q_map,
 }
 
 /**
+ * i40e_vc_validate_vqs_bitmaps - validate Rx/Tx queue bitmaps from VIRTHCHNL
+ * @vqs: virtchnl_queue_select structure containing bitmaps to validate
+ *
+ * Returns true if validation was successful, else false.
+ */
+static bool i40e_vc_validate_vqs_bitmaps(struct virtchnl_queue_select *vqs)
+{
+	if ((!vqs->rx_queues && !vqs->tx_queues) ||
+	    vqs->rx_queues >= BIT(I40E_MAX_VF_QUEUES) ||
+	    vqs->tx_queues >= BIT(I40E_MAX_VF_QUEUES))
+		return false;
+
+	return true;
+}
+
+/**
  * i40e_vc_enable_queues_msg
  * @vf: pointer to the VF info
  * @msg: pointer to the msg buffer
@@ -2347,7 +2366,7 @@ static int i40e_vc_enable_queues_msg(struct i40e_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	if ((0 == vqs->rx_queues) && (0 == vqs->tx_queues)) {
+	if (!i40e_vc_validate_vqs_bitmaps(vqs)) {
 		aq_ret = I40E_ERR_PARAM;
 		goto error_param;
 	}
@@ -2409,9 +2428,7 @@ static int i40e_vc_disable_queues_msg(struct i40e_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	if ((vqs->rx_queues == 0 && vqs->tx_queues == 0) ||
-	    vqs->rx_queues > I40E_MAX_VF_QUEUES ||
-	    vqs->tx_queues > I40E_MAX_VF_QUEUES) {
+	if (!i40e_vc_validate_vqs_bitmaps(vqs)) {
 		aq_ret = I40E_ERR_PARAM;
 		goto error_param;
 	}

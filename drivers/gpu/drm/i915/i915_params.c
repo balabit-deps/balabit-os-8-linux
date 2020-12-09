@@ -84,8 +84,7 @@ i915_param_named_unsafe(enable_hangcheck, bool, 0600,
 
 i915_param_named_unsafe(enable_psr, int, 0600,
 	"Enable PSR "
-	"(0=disabled, 1=enabled) "
-	"Default: -1 (use per-chip default)");
+	"(-1=use per-chip default, 0=disabled [default], 1=enabled) ");
 
 i915_param_named_unsafe(force_probe, charp, 0400,
 	"Force probe the driver for specified devices. "
@@ -171,7 +170,7 @@ i915_param_named_unsafe(inject_load_failure, uint, 0400,
 
 i915_param_named(enable_dpcd_backlight, int, 0600,
 	"Enable support for DPCD backlight control"
-	"(-1=use per-VBT LFP backlight type setting, 0=disabled [default], 1=enabled)");
+	"(-1=use per-VBT LFP backlight type setting [default], 0=disabled, 1=enabled)");
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 i915_param_named(enable_gvt, bool, 0400,

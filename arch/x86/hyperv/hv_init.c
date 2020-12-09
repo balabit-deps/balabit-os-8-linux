@@ -19,8 +19,17 @@
 #include <linux/mm.h>
 #include <linux/hyperv.h>
 #include <linux/slab.h>
+#include <linux/kernel.h>
 #include <linux/cpuhotplug.h>
 #include <clocksource/hyperv_timer.h>
+
+#ifndef PKG_ABI
+/*
+ * Preserve the ability to 'make deb-pkg' since PKG_ABI is provided
+ * by the Ubuntu build rules.
+ */
+#define PKG_ABI 0
+#endif
 
 void *hv_hypercall_pg;
 EXPORT_SYMBOL_GPL(hv_hypercall_pg);
@@ -297,7 +306,7 @@ void __init hyperv_init(void)
 	 * 1. Register the guest ID
 	 * 2. Enable the hypercall and register the hypercall page
 	 */
-	guest_id = generate_guest_id(0, LINUX_VERSION_CODE, 0);
+	guest_id = generate_guest_id(0x80 /*Canonical*/, LINUX_VERSION_CODE, PKG_ABI);
 	wrmsrl(HV_X64_MSR_GUEST_OS_ID, guest_id);
 
 	hv_hypercall_pg  = __vmalloc(PAGE_SIZE, GFP_KERNEL, PAGE_KERNEL_RX);
@@ -354,10 +363,13 @@ void hyperv_cleanup(void)
 }
 EXPORT_SYMBOL_GPL(hyperv_cleanup);
 
-void hyperv_report_panic(struct pt_regs *regs, long err)
+void hyperv_report_panic(struct pt_regs *regs, long err, bool in_die)
 {
 	static bool panic_reported;
 	u64 guest_id;
+
+	if (in_die && !panic_on_oops)
+		return;
 
 	/*
 	 * We prefer to report panic on 'die' chain as we have proper

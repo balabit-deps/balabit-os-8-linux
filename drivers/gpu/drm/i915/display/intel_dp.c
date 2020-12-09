@@ -1292,8 +1292,7 @@ intel_dp_aux_xfer(struct intel_dp *intel_dp,
 	bool is_tc_port = intel_phy_is_tc(i915, phy);
 	i915_reg_t ch_ctl, ch_data[5];
 	u32 aux_clock_divider;
-	enum intel_display_power_domain aux_domain =
-		intel_aux_power_domain(intel_dig_port);
+	enum intel_display_power_domain aux_domain;
 	intel_wakeref_t aux_wakeref;
 	intel_wakeref_t pps_wakeref;
 	int i, ret, recv_bytes;
@@ -1307,6 +1306,8 @@ intel_dp_aux_xfer(struct intel_dp *intel_dp,
 
 	if (is_tc_port)
 		intel_tc_port_lock(intel_dig_port);
+
+	aux_domain = intel_aux_power_domain(intel_dig_port);
 
 	aux_wakeref = intel_display_power_get(i915, aux_domain);
 	pps_wakeref = pps_lock(intel_dp);
@@ -2251,7 +2252,7 @@ intel_dp_compute_config(struct intel_encoder *encoder,
 	struct intel_connector *intel_connector = intel_dp->attached_connector;
 	struct intel_digital_connector_state *intel_conn_state =
 		to_intel_digital_connector_state(conn_state);
-	bool constant_n = drm_dp_has_quirk(&intel_dp->desc,
+	bool constant_n = drm_dp_has_quirk(&intel_dp->desc, 0,
 					   DP_DPCD_QUIRK_CONSTANT_N);
 	int ret = 0, output_bpp;
 
@@ -4327,7 +4328,8 @@ intel_dp_get_dpcd(struct intel_dp *intel_dp)
 	 * it don't care about read it here and in intel_edp_init_dpcd().
 	 */
 	if (!intel_dp_is_edp(intel_dp) &&
-	    !drm_dp_has_quirk(&intel_dp->desc, DP_DPCD_QUIRK_NO_SINK_COUNT)) {
+	    !drm_dp_has_quirk(&intel_dp->desc, 0,
+			      DP_DPCD_QUIRK_NO_SINK_COUNT)) {
 		u8 count;
 		ssize_t r;
 
@@ -5328,6 +5330,7 @@ intel_dp_set_edid(struct intel_dp *intel_dp)
 
 	intel_dp->has_audio = drm_detect_monitor_audio(edid);
 	drm_dp_cec_set_edid(&intel_dp->aux, edid);
+	intel_dp->edid_quirks = drm_dp_get_edid_quirks(edid);
 }
 
 static void
@@ -5340,6 +5343,7 @@ intel_dp_unset_edid(struct intel_dp *intel_dp)
 	intel_connector->detect_edid = NULL;
 
 	intel_dp->has_audio = false;
+	intel_dp->edid_quirks = 0;
 }
 
 static int
@@ -7046,8 +7050,8 @@ static bool intel_edp_init_connector(struct intel_dp *intel_dp,
 	edid = drm_get_edid(connector, &intel_dp->aux.ddc);
 	if (edid) {
 		if (drm_add_edid_modes(connector, edid)) {
-			drm_connector_update_edid_property(connector,
-								edid);
+			drm_connector_update_edid_property(connector, edid);
+			intel_dp->edid_quirks = drm_dp_get_edid_quirks(edid);
 		} else {
 			kfree(edid);
 			edid = ERR_PTR(-EINVAL);
@@ -7218,11 +7222,8 @@ intel_dp_init_connector(struct intel_digital_port *intel_dig_port,
 		intel_connector->get_hw_state = intel_connector_get_hw_state;
 
 	/* init MST on ports that can support it */
-	if (HAS_DP_MST(dev_priv) && !intel_dp_is_edp(intel_dp) &&
-	    (port == PORT_B || port == PORT_C ||
-	     port == PORT_D || port == PORT_F))
-		intel_dp_mst_encoder_init(intel_dig_port,
-					  intel_connector->base.base.id);
+	intel_dp_mst_encoder_init(intel_dig_port,
+				  intel_connector->base.base.id);
 
 	if (!intel_edp_init_connector(intel_dp, intel_connector)) {
 		intel_dp_aux_fini(intel_dp);

@@ -1386,7 +1386,7 @@ struct smb2_oplock_break {
 struct smb2_lease_break {
 	struct smb2_sync_hdr sync_hdr;
 	__le16 StructureSize; /* Must be 44 */
-	__le16 Reserved;
+	__le16 Epoch;
 	__le32 Flags;
 	__u8   LeaseKey[16];
 	__le32 CurrentLeaseState;
@@ -1569,6 +1569,17 @@ struct smb2_file_all_info { /* data block encoding of response to level 18 */
 struct smb2_file_eof_info { /* encoding of request for level 10 */
 	__le64 EndOfFile; /* new end of file value */
 } __packed; /* level 20 Set */
+
+struct smb2_file_network_open_info {
+	__le64 CreationTime;
+	__le64 LastAccessTime;
+	__le64 LastWriteTime;
+	__le64 ChangeTime;
+	__le64 AllocationSize;
+	__le64 EndOfFile;
+	__le32 Attributes;
+	__le32 Reserved;
+} __packed; /* level 34 Query also similar returned in close rsp and open rsp */
 
 extern char smb2_padding[7];
 

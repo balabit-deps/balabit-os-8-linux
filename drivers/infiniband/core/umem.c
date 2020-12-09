@@ -151,13 +151,24 @@ unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 	dma_addr_t mask;
 	int i;
 
+	/* rdma_for_each_block() has a bug if the page size is smaller than the
+	 * page size used to build the umem. For now prevent smaller page sizes
+	 * from being returned.
+	 */
+	pgsz_bitmap &= GENMASK(BITS_PER_LONG - 1, PAGE_SHIFT);
+
 	/* At minimum, drivers must support PAGE_SIZE or smaller */
 	if (WARN_ON(!(pgsz_bitmap & GENMASK(PAGE_SHIFT, 0))))
 		return 0;
 
 	va = virt;
-	/* max page size not to exceed MR length */
-	mask = roundup_pow_of_two(umem->length);
+	/* The best result is the smallest page size that results in the minimum
+	 * number of required pages. Compute the largest page size that could
+	 * work based on VA address bits that don't change.
+	 */
+	mask = pgsz_bitmap &
+	       GENMASK(BITS_PER_LONG - 1,
+		       bits_per((umem->length - 1 + virt) ^ virt));
 	/* offset into first SGL */
 	pgoff = umem->address & ~PAGE_MASK;
 
@@ -166,10 +177,13 @@ unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 		 * for any address.
 		 */
 		mask |= (sg_dma_address(sg) + pgoff) ^ va;
-		if (i && i != (umem->nmap - 1))
-			/* restrict by length as well for interior SGEs */
-			mask |= sg_dma_len(sg);
 		va += sg_dma_len(sg) - pgoff;
+		/* Except for the last entry, the ending iova alignment sets
+		 * the maximum possible page size as the low bits of the iova
+		 * must be zero when starting the next chunk.
+		 */
+		if (i != (umem->nmap - 1))
+			mask |= va;
 		pgoff = 0;
 	}
 	best_pg_bit = rdma_find_pg_bit(mask, pgsz_bitmap);
@@ -185,10 +199,9 @@ EXPORT_SYMBOL(ib_umem_find_best_pgsz);
  * @addr: userspace virtual address to start at
  * @size: length of region to pin
  * @access: IB_ACCESS_xxx flags for memory being pinned
- * @dmasync: flush in-flight DMA when the memory region is written
  */
 struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
-			    size_t size, int access, int dmasync)
+			    size_t size, int access)
 {
 	struct ib_ucontext *context;
 	struct ib_umem *umem;
@@ -199,7 +212,6 @@ struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
 	struct mm_struct *mm;
 	unsigned long npages;
 	int ret;
-	unsigned long dma_attrs = 0;
 	struct scatterlist *sg;
 	unsigned int gup_flags = FOLL_WRITE;
 
@@ -210,9 +222,6 @@ struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
 			  ->context;
 	if (!context)
 		return ERR_PTR(-EIO);
-
-	if (dmasync)
-		dma_attrs |= DMA_ATTR_WRITE_BARRIER;
 
 	/*
 	 * If the combination of the addr and size requested for this memory
@@ -294,11 +303,10 @@ struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
 
 	sg_mark_end(sg);
 
-	umem->nmap = ib_dma_map_sg_attrs(context->device,
+	umem->nmap = ib_dma_map_sg(context->device,
 				  umem->sg_head.sgl,
 				  umem->sg_nents,
-				  DMA_BIDIRECTIONAL,
-				  dma_attrs);
+				  DMA_BIDIRECTIONAL);
 
 	if (!umem->nmap) {
 		ret = -ENOMEM;

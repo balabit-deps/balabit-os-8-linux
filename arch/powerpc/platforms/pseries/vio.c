@@ -36,7 +36,6 @@ static struct vio_dev vio_bus_device  = { /* fake "parent" device */
 	.name = "vio",
 	.type = "",
 	.dev.init_name = "vio",
-	.dev.bus = &vio_bus_type,
 };
 
 #ifdef CONFIG_PPC_SMLPAR
@@ -1175,6 +1174,8 @@ static struct iommu_table *vio_build_iommu_table(struct vio_dev *dev)
 	tbl = kzalloc(sizeof(*tbl), GFP_KERNEL);
 	if (tbl == NULL)
 		return NULL;
+
+	kref_init(&tbl->it_kref);
 
 	of_parse_dma_window(dev->dev.of_node, dma_window,
 			    &tbl->it_index, &offset, &size);

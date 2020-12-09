@@ -87,7 +87,7 @@ static int create_strip_zones(struct mddev *mddev, struct r0conf **private_conf)
 	char b[BDEVNAME_SIZE];
 	char b2[BDEVNAME_SIZE];
 	struct r0conf *conf = kzalloc(sizeof(*conf), GFP_KERNEL);
-	unsigned short blksize = 512;
+	unsigned blksize = 512;
 
 	*private_conf = ERR_PTR(-ENOMEM);
 	if (!conf)
@@ -152,11 +152,12 @@ static int create_strip_zones(struct mddev *mddev, struct r0conf **private_conf)
 		   default_layout == RAID0_ALT_MULTIZONE_LAYOUT) {
 		conf->layout = default_layout;
 	} else {
-		pr_err("md/raid0:%s: cannot assemble multi-zone RAID0 with default_layout setting\n",
+		conf->layout = RAID0_ALT_MULTIZONE_LAYOUT;
+		pr_warn("md/raid0:%s: !!! DEFAULTING TO ALTERNATE LAYOUT !!!\n",
 		       mdname(mddev));
-		pr_err("md/raid0: please set raid0.default_layout to 1 or 2\n");
-		err = -ENOTSUPP;
-		goto abort;
+		pr_warn("md/raid0: Please set raid0.default_layout to 1 or 2\n");
+		pr_warn("md/raid0: Read the following page for more information:\n");
+		pr_warn("md/raid0: https://wiki.ubuntu.com/Kernel/Raid0LayoutMigration\n");
 	}
 	/*
 	 * now since we have the hard sector sizes, we can make sure
@@ -575,10 +576,9 @@ static bool raid0_make_request(struct mddev *mddev, struct bio *bio)
 	unsigned chunk_sects;
 	unsigned sectors;
 
-	if (unlikely(bio->bi_opf & REQ_PREFLUSH)) {
-		md_flush_request(mddev, bio);
+	if (unlikely(bio->bi_opf & REQ_PREFLUSH)
+	    && md_flush_request(mddev, bio))
 		return true;
-	}
 
 	if (unlikely((bio_op(bio) == REQ_OP_DISCARD))) {
 		raid0_handle_discard(mddev, bio);
@@ -615,7 +615,7 @@ static bool raid0_make_request(struct mddev *mddev, struct bio *bio)
 		tmp_dev = map_sector(mddev, zone, sector, &sector);
 		break;
 	default:
-		WARN("md/raid0:%s: Invalid layout\n", mdname(mddev));
+		WARN(1, "md/raid0:%s: Invalid layout\n", mdname(mddev));
 		bio_io_error(bio);
 		return true;
 	}

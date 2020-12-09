@@ -1471,6 +1471,7 @@ struct ib_ucontext {
 	 * Implementation details of the RDMA core, don't use in drivers:
 	 */
 	struct rdma_restrack_entry res;
+	struct xarray mmap_xa;
 };
 
 struct ib_uobject {
@@ -2146,7 +2147,6 @@ struct ib_port_cache {
 
 struct ib_cache {
 	rwlock_t                lock;
-	struct ib_event_handler event_handler;
 };
 
 struct ib_port_immutable {
@@ -2250,6 +2250,21 @@ struct iw_cm_conn_param;
 	rdma_zalloc_drv_obj_gfp(ib_dev, ib_type, GFP_KERNEL)
 
 #define DECLARE_RDMA_OBJ_SIZE(ib_struct) size_t size_##ib_struct
+
+struct rdma_user_mmap_entry {
+	struct kref ref;
+	struct ib_ucontext *ucontext;
+	unsigned long start_pgoff;
+	size_t npages;
+	bool driver_removed;
+};
+
+/* Return the offset (in bytes) the user should pass to libc's mmap() */
+static inline u64
+rdma_user_mmap_get_offset(const struct rdma_user_mmap_entry *entry)
+{
+	return (u64)entry->start_pgoff << PAGE_SHIFT;
+}
 
 /**
  * struct ib_device_ops - InfiniBand device operations
@@ -2363,6 +2378,13 @@ struct ib_device_ops {
 			      struct ib_udata *udata);
 	void (*dealloc_ucontext)(struct ib_ucontext *context);
 	int (*mmap)(struct ib_ucontext *context, struct vm_area_struct *vma);
+	/**
+	 * This will be called once refcount of an entry in mmap_xa reaches
+	 * zero. The type of the memory that was mapped may differ between
+	 * entries and is opaque to the rdma_user_mmap interface.
+	 * Therefore needs to be implemented by the driver in mmap_free.
+	 */
+	void (*mmap_free)(struct rdma_user_mmap_entry *entry);
 	void (*disassociate_ucontext)(struct ib_ucontext *ibcontext);
 	int (*alloc_pd)(struct ib_pd *pd, struct ib_udata *udata);
 	void (*dealloc_pd)(struct ib_pd *pd, struct ib_udata *udata);
@@ -2590,7 +2612,11 @@ struct ib_device {
 	struct rcu_head rcu_head;
 
 	struct list_head              event_handler_list;
-	spinlock_t                    event_handler_lock;
+	/* Protects event_handler_list */
+	struct rw_semaphore event_handler_rwsem;
+
+	/* Protects QP's event_handler calls and open_qp list */
+	spinlock_t event_handler_lock;
 
 	struct rw_semaphore	      client_data_rwsem;
 	struct xarray                 client_data;
@@ -2789,18 +2815,21 @@ void  ib_set_client_data(struct ib_device *device, struct ib_client *client,
 void ib_set_device_ops(struct ib_device *device,
 		       const struct ib_device_ops *ops);
 
-#if IS_ENABLED(CONFIG_INFINIBAND_USER_ACCESS)
 int rdma_user_mmap_io(struct ib_ucontext *ucontext, struct vm_area_struct *vma,
-		      unsigned long pfn, unsigned long size, pgprot_t prot);
-#else
-static inline int rdma_user_mmap_io(struct ib_ucontext *ucontext,
-				    struct vm_area_struct *vma,
-				    unsigned long pfn, unsigned long size,
-				    pgprot_t prot)
-{
-	return -EINVAL;
-}
-#endif
+		      unsigned long pfn, unsigned long size, pgprot_t prot,
+		      struct rdma_user_mmap_entry *entry);
+int rdma_user_mmap_entry_insert(struct ib_ucontext *ucontext,
+				struct rdma_user_mmap_entry *entry,
+				size_t length);
+struct rdma_user_mmap_entry *
+rdma_user_mmap_entry_get_pgoff(struct ib_ucontext *ucontext,
+			       unsigned long pgoff);
+struct rdma_user_mmap_entry *
+rdma_user_mmap_entry_get(struct ib_ucontext *ucontext,
+			 struct vm_area_struct *vma);
+void rdma_user_mmap_entry_put(struct rdma_user_mmap_entry *entry);
+
+void rdma_user_mmap_entry_remove(struct rdma_user_mmap_entry *entry);
 
 static inline int ib_copy_from_udata(void *dest, struct ib_udata *udata, size_t len)
 {
@@ -2897,7 +2926,7 @@ bool ib_modify_qp_is_ok(enum ib_qp_state cur_state, enum ib_qp_state next_state,
 
 void ib_register_event_handler(struct ib_event_handler *event_handler);
 void ib_unregister_event_handler(struct ib_event_handler *event_handler);
-void ib_dispatch_event(struct ib_event *event);
+void ib_dispatch_event(const struct ib_event *event);
 
 int ib_query_port(struct ib_device *device,
 		  u8 port_num, struct ib_port_attr *port_attr);
@@ -4043,9 +4072,7 @@ static inline void ib_dma_unmap_sg_attrs(struct ib_device *dev,
  */
 static inline unsigned int ib_dma_max_seg_size(struct ib_device *dev)
 {
-	struct device_dma_parameters *p = dev->dma_device->dma_parms;
-
-	return p ? p->max_segment_size : UINT_MAX;
+	return dma_get_max_seg_size(dev->dma_device);
 }
 
 /**
@@ -4252,6 +4279,9 @@ static inline int ib_check_mr_access(int flags)
 	 */
 	if (flags & (IB_ACCESS_REMOTE_ATOMIC | IB_ACCESS_REMOTE_WRITE) &&
 	    !(flags & IB_ACCESS_LOCAL_WRITE))
+		return -EINVAL;
+
+	if (flags & ~IB_ACCESS_SUPPORTED)
 		return -EINVAL;
 
 	return 0;

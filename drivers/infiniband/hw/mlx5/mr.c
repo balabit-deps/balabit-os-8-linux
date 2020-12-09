@@ -428,7 +428,7 @@ struct mlx5_ib_mr *mlx5_mr_cache_alloc(struct mlx5_ib_dev *dev, int entry)
 
 	if (entry < 0 || entry >= MAX_MR_CACHE_ENTRIES) {
 		mlx5_ib_err(dev, "cache entry %d is out of range\n", entry);
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	ent = &cache->ent[entry];
@@ -779,7 +779,7 @@ static int mr_umem_get(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 		if (order)
 			*order = ilog2(roundup_pow_of_two(*ncont));
 	} else {
-		u = ib_umem_get(udata, start, length, access_flags, 0);
+		u = ib_umem_get(udata, start, length, access_flags);
 		if (IS_ERR(u)) {
 			mlx5_ib_dbg(dev, "umem get failed (%ld)\n", PTR_ERR(u));
 			return PTR_ERR(u);

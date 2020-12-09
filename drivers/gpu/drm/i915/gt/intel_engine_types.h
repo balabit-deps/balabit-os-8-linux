@@ -107,6 +107,7 @@ struct intel_ring {
 
 	u32 space;
 	u32 size;
+	u32 wrap;
 	u32 effective_size;
 };
 
@@ -300,8 +301,8 @@ struct intel_engine_cs {
 	u8 class;
 	u8 instance;
 
-	u8 uabi_class;
-	u8 uabi_instance;
+	u16 uabi_class;
+	u16 uabi_instance;
 
 	u32 context_size;
 	u32 mmio_base;
@@ -469,6 +470,14 @@ struct intel_engine_cs {
 	void		(*destroy)(struct intel_engine_cs *engine);
 
 	struct intel_engine_execlists execlists;
+
+	/*
+	 * Keep track of completed timelines on this engine for early
+	 * retirement with the goal of quickly enabling powersaving as
+	 * soon as the engine is idle.
+	 */
+	struct intel_timeline *retire;
+	struct work_struct retire_work;
 
 	/* status_notifier: list of callbacks for context-switch changes */
 	struct atomic_notifier_head context_status_notifier;

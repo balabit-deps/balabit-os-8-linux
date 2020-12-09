@@ -236,6 +236,12 @@ cmd_gen_ksymdeps = \
 	$(CONFIG_SHELL) $(srctree)/scripts/gen_ksymdeps.sh $@ >> $(dot-target).cmd
 endif
 
+ifdef CONFIG_RETPOLINE
+cmd_ubuntu_retpoline = $(CONFIG_SHELL) $(srctree)/scripts/ubuntu-retpoline-extract-one $(@) $(<) "$(filter -m16 %code16gcc.h,$(a_flags))";
+else
+cmd_ubuntu_retpoline =
+endif
+
 define rule_cc_o_c
 	$(call cmd,checksrc)
 	$(call cmd_and_fixdep,cc_o_c)
@@ -243,6 +249,7 @@ define rule_cc_o_c
 	$(call cmd,checkdoc)
 	$(call cmd,objtool)
 	$(call cmd,modversions_c)
+	$(call cmd,ubuntu-retpoline)
 	$(call cmd,record_mcount)
 endef
 
@@ -251,6 +258,7 @@ define rule_as_o_S
 	$(call cmd,gen_ksymdeps)
 	$(call cmd,objtool)
 	$(call cmd,modversions_S)
+	$(call cmd,ubuntu-retpoline)
 endef
 
 # List module undefined symbols (or empty line if not enabled)
@@ -263,6 +271,7 @@ endif
 # Built-in and composite module parts
 $(obj)/%.o: $(src)/%.c $(recordmcount_source) $(objtool_dep) FORCE
 	$(call cmd,force_checksrc)
+	$(call cmd,force_check_kmsg)
 	$(call if_changed_rule,cc_o_c)
 
 cmd_mod = { \
@@ -282,15 +291,6 @@ quiet_cmd_cc_lst_c = MKLST   $@
 
 $(obj)/%.lst: $(src)/%.c FORCE
 	$(call if_changed_dep,cc_lst_c)
-
-# header test (header-test-y, header-test-m target)
-# ---------------------------------------------------------------------------
-
-quiet_cmd_cc_s_h = CC      $@
-      cmd_cc_s_h = $(CC) $(c_flags) -S -o $@ -x c /dev/null -include $<
-
-$(obj)/%.h.s: $(src)/%.h FORCE
-	$(call if_changed_dep,cc_s_h)
 
 # Compile assembler sources (.S)
 # ---------------------------------------------------------------------------
@@ -499,6 +499,19 @@ __build: $(if $(KBUILD_BUILTIN),$(builtin-target) $(lib-target) $(extra-y)) \
 	 $(subdir-ym) $(always)
 	@:
 
+endif
+
+# kmsg check tool
+ifneq ($(KBUILD_KMSG_CHECK),0)
+  ifeq ($(KBUILD_KMSG_CHECK),2)
+    kmsg_cmd := print
+    quiet_cmd_force_check_kmsg = KMSG_PRINT $<
+    $(shell [ -d $(objtree)/man ] || mkdir -p $(objtree)/man)
+  else
+    kmsg_cmd := check
+    quiet_cmd_force_check_kmsg = KMSG_CHECK $<
+  endif
+  cmd_force_check_kmsg = $(KMSG_CHECK) $(kmsg_cmd) $(CC) $(c_flags) $< ;
 endif
 
 # Descending

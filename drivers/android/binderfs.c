@@ -109,7 +109,7 @@ static int binderfs_binder_device_create(struct inode *ref_inode,
 	struct super_block *sb = ref_inode->i_sb;
 	struct binderfs_info *info = sb->s_fs_info;
 #if defined(CONFIG_IPC_NS)
-	bool use_reserve = (info->ipc_ns == &init_ipc_ns);
+	bool use_reserve = (info->ipc_ns == show_init_ipc_ns());
 #else
 	bool use_reserve = true;
 #endif
@@ -154,6 +154,7 @@ static int binderfs_binder_device_create(struct inode *ref_inode,
 	if (!name)
 		goto err;
 
+	refcount_set(&device->ref, 1);
 	device->binderfs_inode = inode;
 	device->context.binder_context_mgr_uid = INVALID_UID;
 	device->context.name = name;
@@ -257,8 +258,10 @@ static void binderfs_evict_inode(struct inode *inode)
 	ida_free(&binderfs_minors, device->miscdev.minor);
 	mutex_unlock(&binderfs_minors_mutex);
 
-	kfree(device->context.name);
-	kfree(device);
+	if (refcount_dec_and_test(&device->ref)) {
+		kfree(device->context.name);
+		kfree(device);
+	}
 }
 
 /**
@@ -405,7 +408,7 @@ static int binderfs_binder_ctl_create(struct super_block *sb)
 	struct dentry *root = sb->s_root;
 	struct binderfs_info *info = sb->s_fs_info;
 #if defined(CONFIG_IPC_NS)
-	bool use_reserve = (info->ipc_ns == &init_ipc_ns);
+	bool use_reserve = (info->ipc_ns == show_init_ipc_ns());
 #else
 	bool use_reserve = true;
 #endif
@@ -445,6 +448,7 @@ static int binderfs_binder_ctl_create(struct super_block *sb)
 	inode->i_uid = info->root_uid;
 	inode->i_gid = info->root_gid;
 
+	refcount_set(&device->ref, 1);
 	device->binderfs_inode = inode;
 	device->miscdev.minor = minor;
 
@@ -683,7 +687,7 @@ static int binderfs_fill_super(struct super_block *sb, void *data, int silent)
 		return -ENOMEM;
 	info = sb->s_fs_info;
 
-	info->ipc_ns = get_ipc_ns(current->nsproxy->ipc_ns);
+	info->ipc_ns = get_ipc_ns_exported(current->nsproxy->ipc_ns);
 
 	ret = binderfs_parse_mount_opts(data, &info->mount_opts);
 	if (ret)

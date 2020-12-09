@@ -359,10 +359,14 @@ void vm_unmap_aliases(void)
 EXPORT_SYMBOL_GPL(vm_unmap_aliases);
 
 /*
- * Implement a stub for vmalloc_sync_all() if the architecture chose not to
- * have one.
+ * Implement a stub for vmalloc_sync_[un]mapping() if the architecture
+ * chose not to have one.
  */
-void __weak vmalloc_sync_all(void)
+void __weak vmalloc_sync_mappings(void)
+{
+}
+
+void __weak vmalloc_sync_unmappings(void)
 {
 }
 
@@ -552,7 +556,7 @@ static void __put_nommu_region(struct vm_region *region)
 		up_write(&nommu_region_sem);
 
 		if (region->vm_file)
-			fput(region->vm_file);
+			vmr_fput(region);
 
 		/* IO memory and memory shared directly out of the pagecache
 		 * from ramfs/tmpfs mustn't be released here */
@@ -690,7 +694,7 @@ static void delete_vma(struct mm_struct *mm, struct vm_area_struct *vma)
 	if (vma->vm_ops && vma->vm_ops->close)
 		vma->vm_ops->close(vma);
 	if (vma->vm_file)
-		fput(vma->vm_file);
+		vma_fput(vma);
 	put_nommu_region(vma->vm_region);
 	vm_area_free(vma);
 }
@@ -1213,7 +1217,7 @@ unsigned long do_mmap(struct file *file,
 					goto error_just_free;
 				}
 			}
-			fput(region->vm_file);
+			vmr_fput(region);
 			kmem_cache_free(vm_region_jar, region);
 			region = pregion;
 			result = start;
@@ -1290,10 +1294,10 @@ error_just_free:
 	up_write(&nommu_region_sem);
 error:
 	if (region->vm_file)
-		fput(region->vm_file);
+		vmr_fput(region);
 	kmem_cache_free(vm_region_jar, region);
 	if (vma->vm_file)
-		fput(vma->vm_file);
+		vma_fput(vma);
 	vm_area_free(vma);
 	return ret;
 

@@ -113,14 +113,14 @@ void iwl_pcie_gen2_update_byte_tbl(struct iwl_trans_pcie *trans_pcie,
 	 */
 	num_fetch_chunks = DIV_ROUND_UP(filled_tfd_size, 64) - 1;
 
-	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_22560) {
-		/* Starting from 22560, the HW expects bytes */
+	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_AX210) {
+		/* Starting from AX210, the HW expects bytes */
 		WARN_ON(trans_pcie->bc_table_dword);
 		WARN_ON(len > 0x3FFF);
 		bc_ent = cpu_to_le16(len | (num_fetch_chunks << 14));
 		scd_bc_tbl_gen3->tfd_offset[idx] = bc_ent;
 	} else {
-		/* Until 22560, the HW expects DW */
+		/* Before AX210, the HW expects DW */
 		WARN_ON(!trans_pcie->bc_table_dword);
 		len = DIV_ROUND_UP(len, 4);
 		WARN_ON(len > 0xFFF);
@@ -243,7 +243,8 @@ static int iwl_pcie_gen2_set_tb(struct iwl_trans *trans,
 static int iwl_pcie_gen2_build_amsdu(struct iwl_trans *trans,
 				     struct sk_buff *skb,
 				     struct iwl_tfh_tfd *tfd, int start_len,
-				     u8 hdr_len, struct iwl_device_cmd *dev_cmd)
+				     u8 hdr_len,
+				     struct iwl_device_tx_cmd *dev_cmd)
 {
 #ifdef CONFIG_INET
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
@@ -371,7 +372,7 @@ out_err:
 static struct
 iwl_tfh_tfd *iwl_pcie_gen2_build_tx_amsdu(struct iwl_trans *trans,
 					  struct iwl_txq *txq,
-					  struct iwl_device_cmd *dev_cmd,
+					  struct iwl_device_tx_cmd *dev_cmd,
 					  struct sk_buff *skb,
 					  struct iwl_cmd_meta *out_meta,
 					  int hdr_len,
@@ -403,6 +404,10 @@ iwl_tfh_tfd *iwl_pcie_gen2_build_tx_amsdu(struct iwl_trans *trans,
 	tb_phys = dma_map_single(trans->dev, tb1_addr, len, DMA_TO_DEVICE);
 	if (unlikely(dma_mapping_error(trans->dev, tb_phys)))
 		goto out_err;
+	/*
+	 * No need for _with_wa(), we ensure (via alignment) that the data
+	 * here can never cross or end at a page boundary.
+	 */
 	iwl_pcie_gen2_set_tb(trans, tfd, tb_phys, len);
 
 	if (iwl_pcie_gen2_build_amsdu(trans, skb, tfd,
@@ -456,7 +461,7 @@ static int iwl_pcie_gen2_tx_add_frags(struct iwl_trans *trans,
 static struct
 iwl_tfh_tfd *iwl_pcie_gen2_build_tx(struct iwl_trans *trans,
 				    struct iwl_txq *txq,
-				    struct iwl_device_cmd *dev_cmd,
+				    struct iwl_device_tx_cmd *dev_cmd,
 				    struct sk_buff *skb,
 				    struct iwl_cmd_meta *out_meta,
 				    int hdr_len,
@@ -468,6 +473,7 @@ iwl_tfh_tfd *iwl_pcie_gen2_build_tx(struct iwl_trans *trans,
 	dma_addr_t tb_phys;
 	int len, tb1_len, tb2_len;
 	void *tb1_addr;
+	struct sk_buff *frag;
 
 	tb_phys = iwl_pcie_get_first_tb_dma(txq, idx);
 
@@ -495,6 +501,10 @@ iwl_tfh_tfd *iwl_pcie_gen2_build_tx(struct iwl_trans *trans,
 	tb_phys = dma_map_single(trans->dev, tb1_addr, tb1_len, DMA_TO_DEVICE);
 	if (unlikely(dma_mapping_error(trans->dev, tb_phys)))
 		goto out_err;
+	/*
+	 * No need for _with_wa(), we ensure (via alignment) that the data
+	 * here can never cross or end at a page boundary.
+	 */
 	iwl_pcie_gen2_set_tb(trans, tfd, tb_phys, tb1_len);
 	trace_iwlwifi_dev_tx(trans->dev, skb, tfd, sizeof(*tfd), &dev_cmd->hdr,
 			     IWL_FIRST_TB_SIZE + tb1_len, hdr_len);
@@ -516,6 +526,19 @@ iwl_tfh_tfd *iwl_pcie_gen2_build_tx(struct iwl_trans *trans,
 	if (iwl_pcie_gen2_tx_add_frags(trans, skb, tfd, out_meta))
 		goto out_err;
 
+	skb_walk_frags(skb, frag) {
+		tb_phys = dma_map_single(trans->dev, frag->data,
+					 skb_headlen(frag), DMA_TO_DEVICE);
+		if (unlikely(dma_mapping_error(trans->dev, tb_phys)))
+			goto out_err;
+		iwl_pcie_gen2_set_tb(trans, tfd, tb_phys, skb_headlen(frag));
+		trace_iwlwifi_dev_tx_tb(trans->dev, skb,
+					frag->data,
+					skb_headlen(frag));
+		if (iwl_pcie_gen2_tx_add_frags(trans, frag, tfd, out_meta))
+			goto out_err;
+	}
+
 	return tfd;
 
 out_err:
@@ -526,7 +549,7 @@ out_err:
 static
 struct iwl_tfh_tfd *iwl_pcie_gen2_build_tfd(struct iwl_trans *trans,
 					    struct iwl_txq *txq,
-					    struct iwl_device_cmd *dev_cmd,
+					    struct iwl_device_tx_cmd *dev_cmd,
 					    struct sk_buff *skb,
 					    struct iwl_cmd_meta *out_meta)
 {
@@ -541,7 +564,7 @@ struct iwl_tfh_tfd *iwl_pcie_gen2_build_tfd(struct iwl_trans *trans,
 
 	memset(tfd, 0, sizeof(*tfd));
 
-	if (trans->trans_cfg->device_family < IWL_DEVICE_FAMILY_22560)
+	if (trans->trans_cfg->device_family < IWL_DEVICE_FAMILY_AX210)
 		len = sizeof(struct iwl_tx_cmd_gen2);
 	else
 		len = sizeof(struct iwl_tx_cmd_gen3);
@@ -566,7 +589,7 @@ struct iwl_tfh_tfd *iwl_pcie_gen2_build_tfd(struct iwl_trans *trans,
 }
 
 int iwl_trans_pcie_gen2_tx(struct iwl_trans *trans, struct sk_buff *skb,
-			   struct iwl_device_cmd *dev_cmd, int txq_id)
+			   struct iwl_device_tx_cmd *dev_cmd, int txq_id)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 	struct iwl_cmd_meta *out_meta;
@@ -591,7 +614,7 @@ int iwl_trans_pcie_gen2_tx(struct iwl_trans *trans, struct sk_buff *skb,
 
 		/* don't put the packet on the ring, if there is no room */
 		if (unlikely(iwl_queue_space(trans, txq) < 3)) {
-			struct iwl_device_cmd **dev_cmd_ptr;
+			struct iwl_device_tx_cmd **dev_cmd_ptr;
 
 			dev_cmd_ptr = (void *)((u8 *)skb->cb +
 					       trans_pcie->dev_cmd_offs);
@@ -623,7 +646,7 @@ int iwl_trans_pcie_gen2_tx(struct iwl_trans *trans, struct sk_buff *skb,
 		return -1;
 	}
 
-	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_22560) {
+	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_AX210) {
 		struct iwl_tx_cmd_gen3 *tx_cmd_gen3 =
 			(void *)dev_cmd->payload;
 
@@ -1124,7 +1147,7 @@ int iwl_trans_pcie_dyn_txq_alloc_dma(struct iwl_trans *trans,
 		return -ENOMEM;
 	ret = iwl_pcie_alloc_dma_ptr(trans, &txq->bc_tbl,
 				     (trans->trans_cfg->device_family >=
-				      IWL_DEVICE_FAMILY_22560) ?
+				      IWL_DEVICE_FAMILY_AX210) ?
 				     sizeof(struct iwl_gen3_bc_tbl) :
 				     sizeof(struct iwlagn_scd_bc_tbl));
 	if (ret) {
@@ -1259,6 +1282,9 @@ void iwl_trans_pcie_dyn_txq_free(struct iwl_trans *trans, int queue)
 	}
 
 	iwl_pcie_gen2_txq_unmap(trans, queue);
+
+	iwl_pcie_gen2_txq_free_memory(trans, trans_pcie->txq[queue]);
+	trans_pcie->txq[queue] = NULL;
 
 	IWL_DEBUG_TX_QUEUES(trans, "Deactivate queue %d\n", queue);
 }

@@ -593,25 +593,41 @@ static int vmd_enable_domain(struct vmd_dev *vmd, unsigned long features)
 			if (!membar2)
 				return -ENOMEM;
 			offset[0] = vmd->dev->resource[VMD_MEMBAR1].start -
-					readq(membar2 + MB2_SHADOW_OFFSET);
+					(readq(membar2 + MB2_SHADOW_OFFSET) &
+					 PCI_BASE_ADDRESS_MEM_MASK);
 			offset[1] = vmd->dev->resource[VMD_MEMBAR2].start -
-					readq(membar2 + MB2_SHADOW_OFFSET + 8);
+					(readq(membar2 + MB2_SHADOW_OFFSET + 8) &
+					 PCI_BASE_ADDRESS_MEM_MASK);
 			pci_iounmap(vmd->dev, membar2);
 		}
 	}
 
 	/*
 	 * Certain VMD devices may have a root port configuration option which
-	 * limits the bus range to between 0-127 or 128-255
+	 * limits the bus range to between 0-127, 128-255, or 224-255
 	 */
 	if (features & VMD_FEAT_HAS_BUS_RESTRICTIONS) {
-		u32 vmcap, vmconfig;
+		u16 reg16;
 
-		pci_read_config_dword(vmd->dev, PCI_REG_VMCAP, &vmcap);
-		pci_read_config_dword(vmd->dev, PCI_REG_VMCONFIG, &vmconfig);
-		if (BUS_RESTRICT_CAP(vmcap) &&
-		    (BUS_RESTRICT_CFG(vmconfig) == 0x1))
-			vmd->busn_start = 128;
+		pci_read_config_word(vmd->dev, PCI_REG_VMCAP, &reg16);
+		if (BUS_RESTRICT_CAP(reg16)) {
+			pci_read_config_word(vmd->dev, PCI_REG_VMCONFIG,
+					     &reg16);
+
+			switch (BUS_RESTRICT_CFG(reg16)) {
+			case 1:
+				vmd->busn_start = 128;
+				break;
+			case 2:
+				vmd->busn_start = 224;
+				break;
+			case 3:
+				pci_err(vmd->dev, "Unknown Bus Offset Setting\n");
+				return -ENODEV;
+			default:
+				break;
+			}
+		}
 	}
 
 	res = &vmd->dev->resource[VMD_CFGBAR];
@@ -678,9 +694,10 @@ static int vmd_enable_domain(struct vmd_dev *vmd, unsigned long features)
 
 	vmd->irq_domain = pci_msi_create_irq_domain(fn, &vmd_msi_domain_info,
 						    x86_vector_domain);
-	irq_domain_free_fwnode(fn);
-	if (!vmd->irq_domain)
+	if (!vmd->irq_domain) {
+		irq_domain_free_fwnode(fn);
 		return -ENODEV;
+	}
 
 	pci_add_resource(&resources, &vmd->resources[0]);
 	pci_add_resource_offset(&resources, &vmd->resources[1], offset[0]);
@@ -691,6 +708,7 @@ static int vmd_enable_domain(struct vmd_dev *vmd, unsigned long features)
 	if (!vmd->bus) {
 		pci_free_resource_list(&resources);
 		irq_domain_remove(vmd->irq_domain);
+		irq_domain_free_fwnode(fn);
 		return -ENODEV;
 	}
 
@@ -805,6 +823,7 @@ static void vmd_cleanup_srcu(struct vmd_dev *vmd)
 static void vmd_remove(struct pci_dev *dev)
 {
 	struct vmd_dev *vmd = pci_get_drvdata(dev);
+	struct fwnode_handle *fn = vmd->irq_domain->fwnode;
 
 	sysfs_remove_link(&vmd->dev->dev.kobj, "domain");
 	pci_stop_root_bus(vmd->bus);
@@ -813,6 +832,7 @@ static void vmd_remove(struct pci_dev *dev)
 	vmd_teardown_dma_ops(vmd);
 	vmd_detach_resources(vmd);
 	irq_domain_remove(vmd->irq_domain);
+	irq_domain_free_fwnode(fn);
 }
 
 #ifdef CONFIG_PM_SLEEP
@@ -854,6 +874,8 @@ static const struct pci_device_id vmd_ids[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_VMD_28C0),
 		.driver_data = VMD_FEAT_HAS_MEMBAR_SHADOW |
 				VMD_FEAT_HAS_BUS_RESTRICTIONS,},
+	{PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_VMD_9A0B),
+		.driver_data = VMD_FEAT_HAS_BUS_RESTRICTIONS,},
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, vmd_ids);

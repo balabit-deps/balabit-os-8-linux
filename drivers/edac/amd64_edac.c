@@ -215,7 +215,7 @@ static int __set_scrub_rate(struct amd64_pvt *pvt, u32 new_bw, u32 min_rate)
 
 	scrubval = scrubrates[i].scrubval;
 
-	if (pvt->fam == 0x17 || pvt->fam == 0x18) {
+	if (pvt->umc) {
 		__f17h_set_scrubval(pvt, scrubval);
 	} else if (pvt->fam == 0x15 && pvt->model == 0x60) {
 		f15h_select_dct(pvt, 0);
@@ -257,18 +257,7 @@ static int get_scrub_rate(struct mem_ctl_info *mci)
 	int i, retval = -EINVAL;
 	u32 scrubval = 0;
 
-	switch (pvt->fam) {
-	case 0x15:
-		/* Erratum #505 */
-		if (pvt->model < 0x10)
-			f15h_select_dct(pvt, 0);
-
-		if (pvt->model == 0x60)
-			amd64_read_pci_cfg(pvt->F2, F15H_M60H_SCRCTRL, &scrubval);
-		break;
-
-	case 0x17:
-	case 0x18:
+	if (pvt->umc) {
 		amd64_read_pci_cfg(pvt->F6, F17H_SCR_BASE_ADDR, &scrubval);
 		if (scrubval & BIT(0)) {
 			amd64_read_pci_cfg(pvt->F6, F17H_SCR_LIMIT_ADDR, &scrubval);
@@ -277,11 +266,17 @@ static int get_scrub_rate(struct mem_ctl_info *mci)
 		} else {
 			scrubval = 0;
 		}
-		break;
+	} else if (pvt->fam == 0x15) {
+		/* Erratum #505 */
+		if (pvt->model < 0x10)
+			f15h_select_dct(pvt, 0);
 
-	default:
+		if (pvt->model == 0x60)
+			amd64_read_pci_cfg(pvt->F2, F15H_M60H_SCRCTRL, &scrubval);
+		else
+			amd64_read_pci_cfg(pvt->F3, SCRCTRL, &scrubval);
+	} else {
 		amd64_read_pci_cfg(pvt->F3, SCRCTRL, &scrubval);
-		break;
 	}
 
 	scrubval = scrubval & 0x001F;
@@ -1056,6 +1051,16 @@ static void determine_memory_type(struct amd64_pvt *pvt)
 {
 	u32 dram_ctrl, dcsm;
 
+	if (pvt->umc) {
+		if ((pvt->umc[0].dimm_cfg | pvt->umc[1].dimm_cfg) & BIT(5))
+			pvt->dram_type = MEM_LRDDR4;
+		else if ((pvt->umc[0].dimm_cfg | pvt->umc[1].dimm_cfg) & BIT(4))
+			pvt->dram_type = MEM_RDDR4;
+		else
+			pvt->dram_type = MEM_DDR4;
+		return;
+	}
+
 	switch (pvt->fam) {
 	case 0xf:
 		if (pvt->ext_model >= K8_REV_F)
@@ -1100,16 +1105,6 @@ static void determine_memory_type(struct amd64_pvt *pvt)
 
 	case 0x16:
 		goto ddr3;
-
-	case 0x17:
-	case 0x18:
-		if ((pvt->umc[0].dimm_cfg | pvt->umc[1].dimm_cfg) & BIT(5))
-			pvt->dram_type = MEM_LRDDR4;
-		else if ((pvt->umc[0].dimm_cfg | pvt->umc[1].dimm_cfg) & BIT(4))
-			pvt->dram_type = MEM_RDDR4;
-		else
-			pvt->dram_type = MEM_DDR4;
-		return;
 
 	default:
 		WARN(1, KERN_ERR "%s: Family??? 0x%x\n", __func__, pvt->fam);
@@ -2317,10 +2312,28 @@ static struct amd64_family_type family_types[] = {
 			.dbam_to_cs		= f17_addr_mask_to_cs_size,
 		}
 	},
+	[F17_M60H_CPUS] = {
+		.ctl_name = "F17h_M60h",
+		.f0_id = PCI_DEVICE_ID_AMD_17H_M60H_DF_F0,
+		.f6_id = PCI_DEVICE_ID_AMD_17H_M60H_DF_F6,
+		.ops = {
+			.early_channel_count	= f17_early_channel_count,
+			.dbam_to_cs		= f17_addr_mask_to_cs_size,
+		}
+	},
 	[F17_M70H_CPUS] = {
 		.ctl_name = "F17h_M70h",
 		.f0_id = PCI_DEVICE_ID_AMD_17H_M70H_DF_F0,
 		.f6_id = PCI_DEVICE_ID_AMD_17H_M70H_DF_F6,
+		.ops = {
+			.early_channel_count	= f17_early_channel_count,
+			.dbam_to_cs		= f17_addr_mask_to_cs_size,
+		}
+	},
+	[F19_CPUS] = {
+		.ctl_name = "F19h",
+		.f0_id = PCI_DEVICE_ID_AMD_19H_DF_F0,
+		.f6_id = PCI_DEVICE_ID_AMD_19H_DF_F6,
 		.ops = {
 			.early_channel_count	= f17_early_channel_count,
 			.dbam_to_cs		= f17_addr_mask_to_cs_size,
@@ -2936,6 +2949,7 @@ static int init_csrows_df(struct mem_ctl_info *mci)
 			dimm->mtype = pvt->dram_type;
 			dimm->edac_mode = edac_mode;
 			dimm->dtype = dev_type;
+			dimm->grain = 64;
 		}
 	}
 
@@ -3012,6 +3026,7 @@ static int init_csrows(struct mem_ctl_info *mci)
 			dimm = csrow->channels[j]->dimm;
 			dimm->mtype = pvt->dram_type;
 			dimm->edac_mode = edac_mode;
+			dimm->grain = 64;
 		}
 	}
 
@@ -3364,6 +3379,10 @@ static struct amd64_family_type *per_family_init(struct amd64_pvt *pvt)
 			fam_type = &family_types[F17_M30H_CPUS];
 			pvt->ops = &family_types[F17_M30H_CPUS].ops;
 			break;
+		} else if (pvt->model >= 0x60 && pvt->model <= 0x6f) {
+			fam_type = &family_types[F17_M60H_CPUS];
+			pvt->ops = &family_types[F17_M60H_CPUS].ops;
+			break;
 		} else if (pvt->model >= 0x70 && pvt->model <= 0x7f) {
 			fam_type = &family_types[F17_M70H_CPUS];
 			pvt->ops = &family_types[F17_M70H_CPUS].ops;
@@ -3376,6 +3395,12 @@ static struct amd64_family_type *per_family_init(struct amd64_pvt *pvt)
 
 		if (pvt->fam == 0x18)
 			family_types[F17_CPUS].ctl_name = "F18h";
+		break;
+
+	case 0x19:
+		fam_type	= &family_types[F19_CPUS];
+		pvt->ops	= &family_types[F19_CPUS].ops;
+		family_types[F19_CPUS].ctl_name = "F19h";
 		break;
 
 	default:
@@ -3637,6 +3662,7 @@ static const struct x86_cpu_id amd64_cpuids[] = {
 	{ X86_VENDOR_AMD, 0x16, X86_MODEL_ANY,	X86_FEATURE_ANY, 0 },
 	{ X86_VENDOR_AMD, 0x17, X86_MODEL_ANY,	X86_FEATURE_ANY, 0 },
 	{ X86_VENDOR_HYGON, 0x18, X86_MODEL_ANY, X86_FEATURE_ANY, 0 },
+	{ X86_VENDOR_AMD, 0x19, X86_MODEL_ANY,	X86_FEATURE_ANY, 0 },
 	{ }
 };
 MODULE_DEVICE_TABLE(x86cpu, amd64_cpuids);

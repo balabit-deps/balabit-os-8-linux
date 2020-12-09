@@ -978,6 +978,8 @@ static const struct x86_cpu_id rapl_ids[] __initconst = {
 	INTEL_CPU_FAM6(ICELAKE_NNPI, rapl_defaults_core),
 	INTEL_CPU_FAM6(ICELAKE_X, rapl_defaults_hsw_server),
 	INTEL_CPU_FAM6(ICELAKE_D, rapl_defaults_hsw_server),
+	INTEL_CPU_FAM6(COMETLAKE_L, rapl_defaults_core),
+	INTEL_CPU_FAM6(COMETLAKE, rapl_defaults_core),
 
 	INTEL_CPU_FAM6(ATOM_SILVERMONT, rapl_defaults_byt),
 	INTEL_CPU_FAM6(ATOM_AIRMONT, rapl_defaults_cht),
@@ -1293,6 +1295,9 @@ struct rapl_package *rapl_add_package(int cpu, struct rapl_if_priv *priv)
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
 	int ret;
 
+	if (!rapl_defaults)
+		return ERR_PTR(-ENODEV);
+
 	rp = kzalloc(sizeof(struct rapl_package), GFP_KERNEL);
 	if (!rp)
 		return ERR_PTR(-ENOMEM);
@@ -1419,7 +1424,7 @@ static int __init rapl_init(void)
 
 	id = x86_match_cpu(rapl_ids);
 	if (!id) {
-		pr_err("driver does not support CPU family %d model %d\n",
+		pr_info("driver does not support CPU family %d model %d\n",
 		       boot_cpu_data.x86, boot_cpu_data.x86_model);
 
 		return -ENODEV;

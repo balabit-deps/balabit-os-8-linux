@@ -175,6 +175,33 @@ static const char * const smca_ls_mce_desc[] = {
 	"L2 Fill Data error",
 };
 
+static const char * const smca_ls2_mce_desc[] = {
+	"An ECC error was detected on a data cache read by a probe or victimization",
+	"An ECC error or L2 poison was detected on a data cache read by a load",
+	"An ECC error was detected on a data cache read-modify-write by a store",
+	"An ECC error or poison bit mismatch was detected on a tag read by a probe or victimization",
+	"An ECC error or poison bit mismatch was detected on a tag read by a load",
+	"An ECC error or poison bit mismatch was detected on a tag read by a store",
+	"An ECC error was detected on an EMEM read by a load",
+	"An ECC error was detected on an EMEM read-modify-write by a store",
+	"A parity error was detected in an L1 TLB entry by any access",
+	"A parity error was detected in an L2 TLB entry by any access",
+	"A parity error was detected in a PWC entry by any access",
+	"A parity error was detected in an STQ entry by any access",
+	"A parity error was detected in an LDQ entry by any access",
+	"A parity error was detected in a MAB entry by any access",
+	"A parity error was detected in an SCB entry state field by any access",
+	"A parity error was detected in an SCB entry address field by any access",
+	"A parity error was detected in an SCB entry data field by any access",
+	"A parity error was detected in a WCB entry by any access",
+	"A poisoned line was detected in an SCB entry by any access",
+	"A SystemReadDataError error was reported on read data returned from L2 for a load",
+	"A SystemReadDataError error was reported on read data returned from L2 for an SCB store",
+	"A SystemReadDataError error was reported on read data returned from L2 for a WCB store",
+	"A hardware assertion error was reported",
+	"A parity error was detected in an STLF, SCB EMEM entry or SRB store data by any access",
+};
+
 static const char * const smca_if_mce_desc[] = {
 	"Op Cache Microtag Probe Port Parity Error",
 	"IC Microtag or Full Tag Multi-hit Error",
@@ -378,6 +405,7 @@ struct smca_mce_desc {
 
 static struct smca_mce_desc smca_mce_descs[] = {
 	[SMCA_LS]	= { smca_ls_mce_desc,	ARRAY_SIZE(smca_ls_mce_desc)	},
+	[SMCA_LS_V2]	= { smca_ls2_mce_desc,	ARRAY_SIZE(smca_ls2_mce_desc)	},
 	[SMCA_IF]	= { smca_if_mce_desc,	ARRAY_SIZE(smca_if_mce_desc)	},
 	[SMCA_L2_CACHE]	= { smca_l2_mce_desc,	ARRAY_SIZE(smca_l2_mce_desc)	},
 	[SMCA_DE]	= { smca_de_mce_desc,	ARRAY_SIZE(smca_de_mce_desc)	},
@@ -1161,6 +1189,11 @@ static int __init mce_amd_init(void)
 	if (!fam_ops)
 		return -ENOMEM;
 
+	if (boot_cpu_has(X86_FEATURE_SMCA)) {
+		xec_mask = 0x3f;
+		goto out;
+	}
+
 	switch (c->x86) {
 	case 0xf:
 		fam_ops->mc0_mce = k8_mc0_mce;
@@ -1209,11 +1242,8 @@ static int __init mce_amd_init(void)
 
 	case 0x17:
 	case 0x18:
-		xec_mask = 0x3f;
-		if (!boot_cpu_has(X86_FEATURE_SMCA)) {
-			printk(KERN_WARNING "Decoding supported only on Scalable MCA processors.\n");
-			goto err_out;
-		}
+		pr_warn("Decoding supported only on Scalable MCA processors.\n");
+		goto err_out;
 		break;
 
 	default:
@@ -1221,6 +1251,7 @@ static int __init mce_amd_init(void)
 		goto err_out;
 	}
 
+out:
 	pr_info("MCE: In-kernel MCE decoding enabled.\n");
 
 	mce_register_decode_chain(&amd_mce_dec_nb);

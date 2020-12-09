@@ -1220,9 +1220,10 @@ int intel_ring_pin(struct intel_ring *ring)
 
 	i915_vma_make_unshrinkable(vma);
 
-	GEM_BUG_ON(ring->vaddr);
-	ring->vaddr = addr;
+	/* Discard any unused bytes beyond that submitted to hw. */
+	intel_ring_reset(ring, ring->emit);
 
+	ring->vaddr = addr;
 	return 0;
 
 err_ring:
@@ -1248,20 +1249,14 @@ void intel_ring_unpin(struct intel_ring *ring)
 	if (!atomic_dec_and_test(&ring->pin_count))
 		return;
 
-	/* Discard any unused bytes beyond that submitted to hw. */
-	intel_ring_reset(ring, ring->emit);
-
 	i915_vma_unset_ggtt_write(vma);
 	if (i915_vma_is_map_and_fenceable(vma))
 		i915_vma_unpin_iomap(vma);
 	else
 		i915_gem_object_unpin_map(vma->obj);
 
-	GEM_BUG_ON(!ring->vaddr);
-	ring->vaddr = NULL;
-
-	i915_vma_unpin(vma);
 	i915_vma_make_purgeable(vma);
+	i915_vma_unpin(vma);
 }
 
 static struct i915_vma *create_ring_vma(struct i915_ggtt *ggtt, int size)
@@ -1310,8 +1305,9 @@ intel_engine_create_ring(struct intel_engine_cs *engine, int size)
 		return ERR_PTR(-ENOMEM);
 
 	kref_init(&ring->ref);
-
 	ring->size = size;
+	ring->wrap = BITS_PER_TYPE(ring->size) - ilog2(size);
+
 	/* Workaround an erratum on the i830 which causes a hang if
 	 * the TAIL pointer points to within the last 2 cachelines
 	 * of the buffer.

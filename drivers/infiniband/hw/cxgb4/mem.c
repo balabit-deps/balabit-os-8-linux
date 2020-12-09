@@ -399,7 +399,6 @@ static int finish_mem_reg(struct c4iw_mr *mhp, u32 stag)
 	mmid = stag >> 8;
 	mhp->ibmr.rkey = mhp->ibmr.lkey = stag;
 	mhp->ibmr.length = mhp->attr.len;
-	mhp->ibmr.iova = mhp->attr.va_fbo;
 	mhp->ibmr.page_size = 1U << (mhp->attr.page_size + 12);
 	pr_debug("mmid 0x%x mhp %p\n", mmid, mhp);
 	return xa_insert_irq(&mhp->rhp->mrs, mmid, mhp, GFP_KERNEL);
@@ -543,7 +542,7 @@ struct ib_mr *c4iw_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 
 	mhp->rhp = rhp;
 
-	mhp->umem = ib_umem_get(udata, start, length, acc, 0);
+	mhp->umem = ib_umem_get(udata, start, length, acc);
 	if (IS_ERR(mhp->umem))
 		goto err_free_skb;
 

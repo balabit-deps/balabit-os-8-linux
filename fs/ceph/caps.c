@@ -869,8 +869,8 @@ int __ceph_caps_issued_mask(struct ceph_inode_info *ci, int mask, int touch)
 	int have = ci->i_snap_caps;
 
 	if ((have & mask) == mask) {
-		dout("__ceph_caps_issued_mask ino 0x%lx snap issued %s"
-		     " (mask %s)\n", ci->vfs_inode.i_ino,
+		dout("__ceph_caps_issued_mask ino 0x%llx snap issued %s"
+		     " (mask %s)\n", ceph_ino(&ci->vfs_inode),
 		     ceph_cap_string(have),
 		     ceph_cap_string(mask));
 		return 1;
@@ -881,8 +881,8 @@ int __ceph_caps_issued_mask(struct ceph_inode_info *ci, int mask, int touch)
 		if (!__cap_is_valid(cap))
 			continue;
 		if ((cap->issued & mask) == mask) {
-			dout("__ceph_caps_issued_mask ino 0x%lx cap %p issued %s"
-			     " (mask %s)\n", ci->vfs_inode.i_ino, cap,
+			dout("__ceph_caps_issued_mask ino 0x%llx cap %p issued %s"
+			     " (mask %s)\n", ceph_ino(&ci->vfs_inode), cap,
 			     ceph_cap_string(cap->issued),
 			     ceph_cap_string(mask));
 			if (touch)
@@ -893,8 +893,8 @@ int __ceph_caps_issued_mask(struct ceph_inode_info *ci, int mask, int touch)
 		/* does a combination of caps satisfy mask? */
 		have |= cap->issued;
 		if ((have & mask) == mask) {
-			dout("__ceph_caps_issued_mask ino 0x%lx combo issued %s"
-			     " (mask %s)\n", ci->vfs_inode.i_ino,
+			dout("__ceph_caps_issued_mask ino 0x%llx combo issued %s"
+			     " (mask %s)\n", ceph_ino(&ci->vfs_inode),
 			     ceph_cap_string(cap->issued),
 			     ceph_cap_string(mask));
 			if (touch) {
@@ -1976,8 +1976,12 @@ retry_locked:
 		}
 
 		/* want more caps from mds? */
-		if (want & ~(cap->mds_wanted | cap->issued))
-			goto ack;
+		if (want & ~cap->mds_wanted) {
+			if (want & ~(cap->mds_wanted | cap->issued))
+				goto ack;
+			if (!__cap_is_valid(cap))
+				goto ack;
+		}
 
 		/* things we might delay */
 		if ((cap->issued & ~retain) == 0)
@@ -2009,12 +2013,24 @@ ack:
 			if (mutex_trylock(&session->s_mutex) == 0) {
 				dout("inverting session/ino locks on %p\n",
 				     session);
+				session = ceph_get_mds_session(session);
 				spin_unlock(&ci->i_ceph_lock);
 				if (took_snap_rwsem) {
 					up_read(&mdsc->snap_rwsem);
 					took_snap_rwsem = 0;
 				}
-				mutex_lock(&session->s_mutex);
+				if (session) {
+					mutex_lock(&session->s_mutex);
+					ceph_put_mds_session(session);
+				} else {
+					/*
+					 * Because we take the reference while
+					 * holding the i_ceph_lock, it should
+					 * never be NULL. Throw a warning if it
+					 * ever is.
+					 */
+					WARN_ON_ONCE(true);
+				}
 				goto retry;
 			}
 		}
@@ -3689,6 +3705,7 @@ retry:
 		WARN_ON(1);
 		tsession = NULL;
 		target = -1;
+		mutex_lock(&session->s_mutex);
 	}
 	goto retry;
 
@@ -3933,7 +3950,7 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 			__ceph_queue_cap_release(session, cap);
 			spin_unlock(&session->s_cap_lock);
 		}
-		goto done;
+		goto flush_cap_releases;
 	}
 
 	/* these will work even if we don't have a cap yet */

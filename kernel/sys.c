@@ -1196,6 +1196,21 @@ SYSCALL_DEFINE0(setsid)
 DECLARE_RWSEM(uts_sem);
 
 #ifdef COMPAT_UTS_MACHINE
+static char compat_uts_machine[__OLD_UTS_LEN+1] = COMPAT_UTS_MACHINE;
+
+static int __init parse_compat_uts_machine(char *arg)
+{
+	strncpy(compat_uts_machine, arg, __OLD_UTS_LEN);
+	compat_uts_machine[__OLD_UTS_LEN] = 0;
+	return 0;
+}
+early_param("compat_uts_machine", parse_compat_uts_machine);
+
+#undef COMPAT_UTS_MACHINE
+#define COMPAT_UTS_MACHINE compat_uts_machine
+#endif
+
+#ifdef COMPAT_UTS_MACHINE
 #define override_architecture(name) \
 	(personality(current->personality) == PER_LINUX32 && \
 	 copy_to_user(name->machine, COMPAT_UTS_MACHINE, \
@@ -1279,10 +1294,12 @@ SYSCALL_DEFINE1(uname, struct old_utsname __user *, name)
 
 SYSCALL_DEFINE1(olduname, struct oldold_utsname __user *, name)
 {
-	struct oldold_utsname tmp = {};
+	struct oldold_utsname tmp;
 
 	if (!name)
 		return -EFAULT;
+
+	memset(&tmp, 0, sizeof(tmp));
 
 	down_read(&uts_sem);
 	memcpy(&tmp.sysname, &utsname()->sysname, __OLD_UTS_LEN);

@@ -70,11 +70,9 @@ MODULE_FIRMWARE("amdgpu/vega12_gpu_info.bin");
 MODULE_FIRMWARE("amdgpu/raven_gpu_info.bin");
 MODULE_FIRMWARE("amdgpu/picasso_gpu_info.bin");
 MODULE_FIRMWARE("amdgpu/raven2_gpu_info.bin");
-MODULE_FIRMWARE("amdgpu/arcturus_gpu_info.bin");
 MODULE_FIRMWARE("amdgpu/renoir_gpu_info.bin");
 MODULE_FIRMWARE("amdgpu/navi10_gpu_info.bin");
 MODULE_FIRMWARE("amdgpu/navi14_gpu_info.bin");
-MODULE_FIRMWARE("amdgpu/navi12_gpu_info.bin");
 
 #define AMDGPU_RESUME_MS		2000
 
@@ -3070,11 +3068,11 @@ int amdgpu_device_suspend(struct drm_device *dev, bool suspend, bool fbcon)
 		}
 	}
 
-	amdgpu_amdkfd_suspend(adev);
-
 	amdgpu_ras_suspend(adev);
 
 	r = amdgpu_device_ip_suspend_phase1(adev);
+
+	amdgpu_amdkfd_suspend(adev);
 
 	/* evict vram memory */
 	amdgpu_bo_evict_vram(adev);

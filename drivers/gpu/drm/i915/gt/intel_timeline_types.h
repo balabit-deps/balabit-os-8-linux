@@ -42,7 +42,7 @@ struct intel_timeline {
 	 * from the intel_context caller plus internal atomicity.
 	 */
 	atomic_t pin_count;
-	unsigned int active_count;
+	atomic_t active_count;
 
 	const u32 *hwsp_seqno;
 	struct i915_vma *hwsp_ggtt;
@@ -64,6 +64,9 @@ struct intel_timeline {
 	 * struct_mutex.
 	 */
 	struct i915_active_request last_request;
+
+	/** A chain of completed timelines ready for early retirement. */
+	struct intel_timeline *retire;
 
 	/**
 	 * We track the most recent seqno that we wait on in every context so

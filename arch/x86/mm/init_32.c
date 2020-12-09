@@ -779,6 +779,9 @@ void __init mem_init(void)
 	 * important here.
 	 */
 	set_highmem_pages_init();
+#ifdef CONFIG_HIGHMEM
+	set_default_mem_hotplug_zone(ZONE_HIGHMEM);
+#endif
 
 	/* this will put all low memory onto the freelists */
 	memblock_free_all();
@@ -865,10 +868,8 @@ void arch_remove_memory(int nid, u64 start, u64 size,
 {
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
-	struct zone *zone;
 
-	zone = page_zone(pfn_to_page(start_pfn));
-	__remove_pages(zone, start_pfn, nr_pages, altmap);
+	__remove_pages(start_pfn, nr_pages, altmap);
 }
 #endif
 

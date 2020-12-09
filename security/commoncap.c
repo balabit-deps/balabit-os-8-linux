@@ -657,7 +657,7 @@ static int get_file_caps(struct linux_binprm *bprm, bool *effective, bool *has_f
 	if (!file_caps_enabled)
 		return 0;
 
-	if (!mnt_may_suid(bprm->file->f_path.mnt))
+	if (path_nosuid(&bprm->file->f_path))
 		return 0;
 
 	/*
@@ -812,6 +812,7 @@ int cap_bprm_set_creds(struct linux_binprm *bprm)
 	int ret;
 	kuid_t root_uid;
 
+	new->cap_ambient = old->cap_ambient;
 	if (WARN_ON(!cap_ambient_invariant_ok(old)))
 		return -EPERM;
 

@@ -26,6 +26,7 @@
 #define I915_REQUEST_H
 
 #include <linux/dma-fence.h>
+#include <linux/irq_work.h>
 #include <linux/lockdep.h>
 
 #include "gt/intel_context_types.h"
@@ -147,6 +148,7 @@ struct i915_request {
 	};
 	struct list_head execute_cb;
 	struct i915_sw_fence semaphore;
+	struct irq_work semaphore_work;
 
 	/*
 	 * A list of everyone we wait upon, and everyone who waits upon us.
@@ -251,6 +253,7 @@ struct i915_request *__i915_request_commit(struct i915_request *request);
 void __i915_request_queue(struct i915_request *rq,
 			  const struct i915_sched_attr *attr);
 
+bool i915_request_retire(struct i915_request *rq);
 void i915_request_retire_upto(struct i915_request *rq);
 
 static inline struct i915_request *

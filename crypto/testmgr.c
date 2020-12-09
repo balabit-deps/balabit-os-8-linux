@@ -2102,6 +2102,7 @@ static void generate_random_aead_testvec(struct aead_request *req,
 	 * If the key or authentication tag size couldn't be set, no need to
 	 * continue to encrypt.
 	 */
+	vec->crypt_error = 0;
 	if (vec->setkey_error || vec->setauthsize_error)
 		goto done;
 
@@ -2245,10 +2246,12 @@ static int test_aead_vs_generic_impl(const char *driver,
 					req, tsgls);
 		if (err)
 			goto out;
-		err = test_aead_vec_cfg(driver, DECRYPT, &vec, vec_name, cfg,
-					req, tsgls);
-		if (err)
-			goto out;
+		if (vec.crypt_error == 0) {
+			err = test_aead_vec_cfg(driver, DECRYPT, &vec, vec_name,
+						cfg, req, tsgls);
+			if (err)
+				goto out;
+		}
 		cond_resched();
 	}
 	err = 0;
@@ -2678,6 +2681,15 @@ static void generate_random_cipher_testvec(struct skcipher_request *req,
 	skcipher_request_set_callback(req, 0, crypto_req_done, &wait);
 	skcipher_request_set_crypt(req, &src, &dst, vec->len, iv);
 	vec->crypt_error = crypto_wait_req(crypto_skcipher_encrypt(req), &wait);
+	if (vec->crypt_error != 0) {
+		/*
+		 * The only acceptable error here is for an invalid length, so
+		 * skcipher decryption should fail with the same error too.
+		 * We'll test for this.  But to keep the API usage well-defined,
+		 * explicitly initialize the ciphertext buffer too.
+		 */
+		memset((u8 *)vec->ctext, 0, vec->len);
+	}
 done:
 	snprintf(name, max_namelen, "\"random: len=%u klen=%u\"",
 		 vec->len, vec->klen);
@@ -4104,6 +4116,15 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(tf_cbc_tv_template)
 		},
 	}, {
+#if IS_ENABLED(CONFIG_CRYPTO_PAES_S390)
+		.alg = "cbc-paes-s390",
+		.fips_allowed = 1,
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(aes_cbc_tv_template)
+		}
+	}, {
+#endif
 		.alg = "cbcmac(aes)",
 		.fips_allowed = 1,
 		.test = alg_test_hash,
@@ -4246,6 +4267,15 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(tf_ctr_tv_template)
 		}
 	}, {
+#if IS_ENABLED(CONFIG_CRYPTO_PAES_S390)
+		.alg = "ctr-paes-s390",
+		.fips_allowed = 1,
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(aes_ctr_tv_template)
+		}
+	}, {
+#endif
 		.alg = "cts(cbc(aes))",
 		.test = alg_test_skcipher,
 		.fips_allowed = 1,
@@ -4532,6 +4562,15 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(xtea_tv_template)
 		}
 	}, {
+#if IS_ENABLED(CONFIG_CRYPTO_PAES_S390)
+		.alg = "ecb-paes-s390",
+		.fips_allowed = 1,
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(aes_tv_template)
+		}
+	}, {
+#endif
 		.alg = "ecdh",
 		.test = alg_test_kpp,
 		.fips_allowed = 1,
@@ -5085,6 +5124,15 @@ static const struct alg_test_desc alg_test_descs[] = {
 			.cipher = __VECS(tf_xts_tv_template)
 		}
 	}, {
+#if IS_ENABLED(CONFIG_CRYPTO_PAES_S390)
+		.alg = "xts-paes-s390",
+		.fips_allowed = 1,
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = __VECS(aes_xts_tv_template)
+		}
+	}, {
+#endif
 		.alg = "xts4096(paes)",
 		.test = alg_test_null,
 		.fips_allowed = 1,

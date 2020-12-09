@@ -514,14 +514,17 @@ static bool iwl_mvm_is_sn_less(u16 sn1, u16 sn2, u16 buffer_size)
 
 static void iwl_mvm_sync_nssn(struct iwl_mvm *mvm, u8 baid, u16 nssn)
 {
-	struct iwl_mvm_rss_sync_notif notif = {
-		.metadata.type = IWL_MVM_RXQ_NSSN_SYNC,
-		.metadata.sync = 0,
-		.nssn_sync.baid = baid,
-		.nssn_sync.nssn = nssn,
-	};
+	if (IWL_MVM_USE_NSSN_SYNC) {
+		struct iwl_mvm_rss_sync_notif notif = {
+			.metadata.type = IWL_MVM_RXQ_NSSN_SYNC,
+			.metadata.sync = 0,
+			.nssn_sync.baid = baid,
+			.nssn_sync.nssn = nssn,
+		};
 
-	iwl_mvm_sync_rx_queues_internal(mvm, (void *)&notif, sizeof(notif));
+		iwl_mvm_sync_rx_queues_internal(mvm, (void *)&notif,
+						sizeof(notif));
+	}
 }
 
 #define RX_REORDER_BUF_TIMEOUT_MQ (HZ / 10)
@@ -1565,7 +1568,7 @@ void iwl_mvm_rx_mpdu_mq(struct iwl_mvm *mvm, struct napi_struct *napi,
 	if (unlikely(test_bit(IWL_MVM_STATUS_IN_HW_RESTART, &mvm->status)))
 		return;
 
-	if (mvm->trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_22560) {
+	if (mvm->trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_AX210) {
 		rate_n_flags = le32_to_cpu(desc->v3.rate_n_flags);
 		channel = desc->v3.channel;
 		gp2_on_air_rise = le32_to_cpu(desc->v3.gp2_on_air_rise);
@@ -1667,7 +1670,7 @@ void iwl_mvm_rx_mpdu_mq(struct iwl_mvm *mvm, struct napi_struct *napi,
 		u64 tsf_on_air_rise;
 
 		if (mvm->trans->trans_cfg->device_family >=
-		    IWL_DEVICE_FAMILY_22560)
+		    IWL_DEVICE_FAMILY_AX210)
 			tsf_on_air_rise = le64_to_cpu(desc->v3.tsf_on_air_rise);
 		else
 			tsf_on_air_rise = le64_to_cpu(desc->v1.tsf_on_air_rise);

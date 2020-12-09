@@ -79,6 +79,7 @@
 #include "iwl-agn-hw.h"
 #include "fw/error-dump.h"
 #include "fw/dbg.h"
+#include "fw/api/tx.h"
 #include "internal.h"
 #include "iwl-fh.h"
 
@@ -1112,30 +1113,12 @@ static struct iwl_causes_list causes_list[] = {
 	{MSIX_HW_INT_CAUSES_REG_HAP,		CSR_MSIX_HW_INT_MASK_AD, 0x2E},
 };
 
-static struct iwl_causes_list causes_list_v2[] = {
-	{MSIX_FH_INT_CAUSES_D2S_CH0_NUM,	CSR_MSIX_FH_INT_MASK_AD, 0},
-	{MSIX_FH_INT_CAUSES_D2S_CH1_NUM,	CSR_MSIX_FH_INT_MASK_AD, 0x1},
-	{MSIX_FH_INT_CAUSES_S2D,		CSR_MSIX_FH_INT_MASK_AD, 0x3},
-	{MSIX_FH_INT_CAUSES_FH_ERR,		CSR_MSIX_FH_INT_MASK_AD, 0x5},
-	{MSIX_HW_INT_CAUSES_REG_ALIVE,		CSR_MSIX_HW_INT_MASK_AD, 0x10},
-	{MSIX_HW_INT_CAUSES_REG_IPC,		CSR_MSIX_HW_INT_MASK_AD, 0x11},
-	{MSIX_HW_INT_CAUSES_REG_SW_ERR_V2,	CSR_MSIX_HW_INT_MASK_AD, 0x15},
-	{MSIX_HW_INT_CAUSES_REG_CT_KILL,	CSR_MSIX_HW_INT_MASK_AD, 0x16},
-	{MSIX_HW_INT_CAUSES_REG_RF_KILL,	CSR_MSIX_HW_INT_MASK_AD, 0x17},
-	{MSIX_HW_INT_CAUSES_REG_PERIODIC,	CSR_MSIX_HW_INT_MASK_AD, 0x18},
-	{MSIX_HW_INT_CAUSES_REG_SCD,		CSR_MSIX_HW_INT_MASK_AD, 0x2A},
-	{MSIX_HW_INT_CAUSES_REG_FH_TX,		CSR_MSIX_HW_INT_MASK_AD, 0x2B},
-	{MSIX_HW_INT_CAUSES_REG_HW_ERR,		CSR_MSIX_HW_INT_MASK_AD, 0x2D},
-	{MSIX_HW_INT_CAUSES_REG_HAP,		CSR_MSIX_HW_INT_MASK_AD, 0x2E},
-};
-
 static void iwl_pcie_map_non_rx_causes(struct iwl_trans *trans)
 {
 	struct iwl_trans_pcie *trans_pcie =  IWL_TRANS_GET_PCIE_TRANS(trans);
 	int val = trans_pcie->def_irq | MSIX_NON_AUTO_CLEAR_CAUSE;
-	int i, arr_size =
-		(trans->trans_cfg->device_family != IWL_DEVICE_FAMILY_22560) ?
-		ARRAY_SIZE(causes_list) : ARRAY_SIZE(causes_list_v2);
+	int i, arr_size = ARRAY_SIZE(causes_list);
+	struct iwl_causes_list *causes = causes_list;
 
 	/*
 	 * Access all non RX causes and map them to the default irq.
@@ -1143,11 +1126,6 @@ static void iwl_pcie_map_non_rx_causes(struct iwl_trans *trans)
 	 * the first interrupt vector will serve non-RX and FBQ causes.
 	 */
 	for (i = 0; i < arr_size; i++) {
-		struct iwl_causes_list *causes =
-			(trans->trans_cfg->device_family !=
-			 IWL_DEVICE_FAMILY_22560) ?
-			causes_list : causes_list_v2;
-
 		iwl_write8(trans, CSR_MSIX_IVAR(causes[i].addr), val);
 		iwl_clear_bit(trans, causes[i].mask_reg,
 			      causes[i].cause_num);
@@ -1634,11 +1612,15 @@ iwl_pcie_set_interrupt_capa(struct pci_dev *pdev,
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 	int max_irqs, num_irqs, i, ret;
 	u16 pci_cmd;
+	u32 max_rx_queues = IWL_MAX_RX_HW_QUEUES;
 
 	if (!cfg_trans->mq_rx_supported)
 		goto enable_msi;
 
-	max_irqs = min_t(u32, num_online_cpus() + 2, IWL_MAX_RX_HW_QUEUES);
+	if (cfg_trans->device_family <= IWL_DEVICE_FAMILY_9000)
+		max_rx_queues = IWL_9000_MAX_RX_HW_QUEUES;
+
+	max_irqs = min_t(u32, num_online_cpus() + 2, max_rx_queues);
 	for (i = 0; i < max_irqs; i++)
 		trans_pcie->msix_entries[i].entry = i;
 
@@ -1783,6 +1765,29 @@ static int iwl_trans_pcie_clear_persistence_bit(struct iwl_trans *trans)
 	return 0;
 }
 
+static int iwl_pcie_gen2_force_power_gating(struct iwl_trans *trans)
+{
+	int ret;
+
+	ret = iwl_finish_nic_init(trans, trans->trans_cfg);
+	if (ret < 0)
+		return ret;
+
+	iwl_set_bits_prph(trans, HPM_HIPM_GEN_CFG,
+			  HPM_HIPM_GEN_CFG_CR_FORCE_ACTIVE);
+	udelay(20);
+	iwl_set_bits_prph(trans, HPM_HIPM_GEN_CFG,
+			  HPM_HIPM_GEN_CFG_CR_PG_EN |
+			  HPM_HIPM_GEN_CFG_CR_SLP_EN);
+	udelay(20);
+	iwl_clear_bits_prph(trans, HPM_HIPM_GEN_CFG,
+			    HPM_HIPM_GEN_CFG_CR_FORCE_ACTIVE);
+
+	iwl_trans_pcie_sw_reset(trans);
+
+	return 0;
+}
+
 static int _iwl_trans_pcie_start_hw(struct iwl_trans *trans)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
@@ -1801,6 +1806,13 @@ static int _iwl_trans_pcie_start_hw(struct iwl_trans *trans)
 		return err;
 
 	iwl_trans_pcie_sw_reset(trans);
+
+	if (trans->trans_cfg->device_family == IWL_DEVICE_FAMILY_22000 &&
+	    trans->cfg->integrated) {
+		err = iwl_pcie_gen2_force_power_gating(trans);
+		if (err)
+			return err;
+	}
 
 	err = iwl_pcie_apm_init(trans);
 	if (err)
@@ -1871,7 +1883,7 @@ static u32 iwl_trans_pcie_read32(struct iwl_trans *trans, u32 ofs)
 
 static u32 iwl_trans_pcie_prph_msk(struct iwl_trans *trans)
 {
-	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_22560)
+	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_AX210)
 		return 0x00FFFFFF;
 	else
 		return 0x000FFFFF;
@@ -3432,19 +3444,34 @@ struct iwl_trans *iwl_trans_pcie_alloc(struct pci_dev *pdev,
 {
 	struct iwl_trans_pcie *trans_pcie;
 	struct iwl_trans *trans;
-	int ret, addr_size;
+	int ret, addr_size, txcmd_size, txcmd_align;
+	const struct iwl_trans_ops *ops = &trans_ops_pcie_gen2;
+
+	if (!cfg_trans->gen2) {
+		ops = &trans_ops_pcie;
+		txcmd_size = sizeof(struct iwl_tx_cmd);
+		txcmd_align = sizeof(void *);
+	} else if (cfg_trans->device_family < IWL_DEVICE_FAMILY_AX210) {
+		txcmd_size = sizeof(struct iwl_tx_cmd_gen2);
+		txcmd_align = 64;
+	} else {
+		txcmd_size = sizeof(struct iwl_tx_cmd_gen3);
+		txcmd_align = 128;
+	}
+
+	txcmd_size += sizeof(struct iwl_cmd_header);
+	txcmd_size += 36; /* biggest possible 802.11 header */
+
+	/* Ensure device TX cmd cannot reach/cross a page boundary in gen2 */
+	if (WARN_ON(cfg_trans->gen2 && txcmd_size >= txcmd_align))
+		return ERR_PTR(-EINVAL);
 
 	ret = pcim_enable_device(pdev);
 	if (ret)
 		return ERR_PTR(ret);
 
-	if (cfg_trans->gen2)
-		trans = iwl_trans_alloc(sizeof(struct iwl_trans_pcie),
-					&pdev->dev, &trans_ops_pcie_gen2);
-	else
-		trans = iwl_trans_alloc(sizeof(struct iwl_trans_pcie),
-					&pdev->dev, &trans_ops_pcie);
-
+	trans = iwl_trans_alloc(sizeof(struct iwl_trans_pcie), &pdev->dev, ops,
+				txcmd_size, txcmd_align);
 	if (!trans)
 		return ERR_PTR(-ENOMEM);
 

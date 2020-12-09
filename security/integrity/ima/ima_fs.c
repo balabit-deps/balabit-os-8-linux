@@ -287,7 +287,7 @@ static ssize_t ima_read_policy(char *path)
 
 	rc = kernel_read_file_from_path(path, &data, &size, 0, READING_POLICY);
 	if (rc < 0) {
-		pr_err("Unable to open file: %s (%d)", path, rc);
+		pr_warn("Unable to open file: %s (%d)", path, rc);
 		return rc;
 	}
 
@@ -340,8 +340,7 @@ static ssize_t ima_write_policy(struct file *file, const char __user *buf,
 		integrity_audit_msg(AUDIT_INTEGRITY_STATUS, NULL, NULL,
 				    "policy_update", "signed policy required",
 				    1, 0);
-		if (ima_appraise & IMA_APPRAISE_ENFORCE)
-			result = -EACCES;
+		result = -EACCES;
 	} else {
 		result = ima_parse_add_rule(data);
 	}

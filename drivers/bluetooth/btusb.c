@@ -14,6 +14,7 @@
 #include <linux/iopoll.h>
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
+#include <linux/pci.h>
 #include <linux/suspend.h>
 #include <linux/gpio/consumer.h>
 #include <asm/unaligned.h>
@@ -1200,7 +1201,7 @@ static int btusb_open(struct hci_dev *hdev)
 	if (data->setup_on_usb) {
 		err = data->setup_on_usb(hdev);
 		if (err < 0)
-			return err;
+			goto setup_fail;
 	}
 
 	data->intf->needs_remote_wakeup = 1;
@@ -1239,6 +1240,7 @@ done:
 
 failed:
 	clear_bit(BTUSB_INTR_RUNNING, &data->flags);
+setup_fail:
 	usb_autopm_put_interface(data->intf);
 	return err;
 }
@@ -2584,7 +2586,7 @@ static void btusb_mtk_wmt_recv(struct urb *urb)
 		 * and being processed the events from there then.
 		 */
 		if (test_bit(BTUSB_TX_WAIT_VND_EVT, &data->flags)) {
-			data->evt_skb = skb_clone(skb, GFP_KERNEL);
+			data->evt_skb = skb_clone(skb, GFP_ATOMIC);
 			if (!data->evt_skb)
 				goto err_out;
 		}
@@ -2663,6 +2665,7 @@ static int btusb_mtk_submit_wmt_recv_urb(struct hci_dev *hdev)
 	buf = kmalloc(size, GFP_KERNEL);
 	if (!buf) {
 		kfree(dr);
+		usb_free_urb(urb);
 		return -ENOMEM;
 	}
 
@@ -2791,11 +2794,25 @@ static int btusb_mtk_setup_firmware(struct hci_dev *hdev, const char *fwname)
 	const u8 *fw_ptr;
 	size_t fw_size;
 	int err, dlen;
-	u8 flag;
+	u8 flag, param;
 
 	err = request_firmware(&fw, fwname, &hdev->dev);
 	if (err < 0) {
 		bt_dev_err(hdev, "Failed to load firmware file (%d)", err);
+		return err;
+	}
+
+	/* Power on data RAM the firmware relies on. */
+	param = 1;
+	wmt_params.op = BTMTK_WMT_FUNC_CTRL;
+	wmt_params.flag = 3;
+	wmt_params.dlen = sizeof(param);
+	wmt_params.data = &param;
+	wmt_params.status = NULL;
+
+	err = btusb_mtk_hci_wmt_sync(hdev, &wmt_params);
+	if (err < 0) {
+		bt_dev_err(hdev, "Failed to power on data RAM (%d)", err);
 		return err;
 	}
 
@@ -2849,7 +2866,7 @@ static int btusb_mtk_setup_firmware(struct hci_dev *hdev, const char *fwname)
 	err = btusb_mtk_hci_wmt_sync(hdev, &wmt_params);
 	if (err < 0) {
 		bt_dev_err(hdev, "Failed to send wmt rst (%d)", err);
-		return err;
+		goto err_release_fw;
 	}
 
 	/* Wait a few moments for firmware activation done */
@@ -3117,6 +3134,35 @@ static int btusb_set_bdaddr_marvell(struct hci_dev *hdev,
 	}
 	kfree_skb(skb);
 
+	return 0;
+}
+
+#define BTUSB_EDGE_LED_COMMAND		0xfc77
+
+static void btusb_edge_set_led(struct hci_dev *hdev, bool state)
+{
+	struct sk_buff *skb;
+	u8 config_led[] = { 0x09, 0x00, 0x01, 0x01 };
+
+	if (state)
+		config_led[1] = 0x01;
+
+	skb = __hci_cmd_sync(hdev, BTUSB_EDGE_LED_COMMAND, sizeof(config_led), config_led, HCI_INIT_TIMEOUT);
+	if (IS_ERR(skb))
+		BT_ERR("%s fail to set LED (%ld)", hdev->name, PTR_ERR(skb));
+	else
+		kfree_skb(skb);
+}
+
+static int btusb_edge_post_init(struct hci_dev *hdev)
+{
+	btusb_edge_set_led(hdev, true);
+	return 0;
+}
+
+static int btusb_edge_shutdown(struct hci_dev *hdev)
+{
+	btusb_edge_set_led(hdev, false);
 	return 0;
 }
 
@@ -3771,8 +3817,18 @@ static int btusb_probe(struct usb_interface *intf,
 		set_bit(HCI_QUIRK_NON_PERSISTENT_DIAG, &hdev->quirks);
 	}
 
-	if (id->driver_info & BTUSB_MARVELL)
+	if (id->driver_info & BTUSB_MARVELL) {
+		struct pci_dev *pdev;
 		hdev->set_bdaddr = btusb_set_bdaddr_marvell;
+		pdev = pci_get_subsys(PCI_ANY_ID, PCI_ANY_ID, 0x1028, 0x0720, NULL);
+		if (!pdev)
+			pdev = pci_get_subsys(PCI_ANY_ID, PCI_ANY_ID, 0x1028, 0x0733, NULL);
+		if (pdev) {
+			pci_dev_put(pdev);
+			hdev->post_init = btusb_edge_post_init;
+			hdev->shutdown = btusb_edge_shutdown;
+		}
+	}
 
 #ifdef CONFIG_BT_HCIBTUSB_MTK
 	if (id->driver_info & BTUSB_MEDIATEK) {
@@ -3807,8 +3863,8 @@ static int btusb_probe(struct usb_interface *intf,
 		btusb_check_needs_reset_resume(intf);
 	}
 
-#ifdef CONFIG_BT_HCIBTUSB_RTL
-	if (id->driver_info & BTUSB_REALTEK) {
+	if (IS_ENABLED(CONFIG_BT_HCIBTUSB_RTL) &&
+	    (id->driver_info & BTUSB_REALTEK)) {
 		hdev->setup = btrtl_setup_realtek;
 		hdev->shutdown = btrtl_shutdown_realtek;
 		hdev->cmd_timeout = btusb_rtl_cmd_timeout;
@@ -3818,8 +3874,11 @@ static int btusb_probe(struct usb_interface *intf,
 		 * (DEVICE_REMOTE_WAKEUP)
 		 */
 		set_bit(BTUSB_WAKEUP_DISABLE, &data->flags);
+
+		err = usb_autopm_get_interface(intf);
+		if (err < 0)
+			goto out_free_dev;
 	}
-#endif
 
 	if (id->driver_info & BTUSB_AMP) {
 		/* AMP controllers do not support SCO packets */

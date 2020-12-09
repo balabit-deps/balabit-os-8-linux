@@ -31,6 +31,7 @@
 #include <linux/ucs2_string.h>
 #include <linux/memblock.h>
 #include <linux/security.h>
+#include <linux/bsearch.h>
 
 #include <asm/early_ioremap.h>
 
@@ -217,7 +218,7 @@ static void generic_ops_unregister(void)
 	efivars_unregister(&generic_efivars);
 }
 
-#if IS_ENABLED(CONFIG_ACPI)
+#ifdef CONFIG_EFI_CUSTOM_SSDT_OVERLAYS
 #define EFIVAR_SSDT_NAME_MAX	16
 static char efivar_ssdt[EFIVAR_SSDT_NAME_MAX] __initdata;
 static int __init efivar_ssdt_setup(char *str)
@@ -345,6 +346,7 @@ static int __init efisubsys_init(void)
 	efi_kobj = kobject_create_and_add("efi", firmware_kobj);
 	if (!efi_kobj) {
 		pr_err("efi: Firmware registration failed.\n");
+		destroy_workqueue(efi_rts_wq);
 		return -ENOMEM;
 	}
 
@@ -381,6 +383,7 @@ err_unregister:
 	generic_ops_unregister();
 err_put:
 	kobject_put(efi_kobj);
+	destroy_workqueue(efi_rts_wq);
 	return error;
 }
 
@@ -544,7 +547,7 @@ int __init efi_config_parse_tables(void *config_tables, int count, int sz,
 
 		seed = early_memremap(efi.rng_seed, sizeof(*seed));
 		if (seed != NULL) {
-			size = seed->size;
+			size = READ_ONCE(seed->size);
 			early_memunmap(seed, sizeof(*seed));
 		} else {
 			pr_err("Could not map UEFI random seed!\n");
@@ -554,7 +557,7 @@ int __init efi_config_parse_tables(void *config_tables, int count, int sz,
 					      sizeof(*seed) + size);
 			if (seed != NULL) {
 				pr_notice("seeding entropy pool\n");
-				add_bootloader_randomness(seed->bits, seed->size);
+				add_bootloader_randomness(seed->bits, size);
 				early_memunmap(seed, sizeof(*seed) + size);
 			} else {
 				pr_err("Could not map UEFI random seed!\n");
@@ -562,7 +565,7 @@ int __init efi_config_parse_tables(void *config_tables, int count, int sz,
 		}
 	}
 
-	if (efi_enabled(EFI_MEMMAP))
+	if (!IS_ENABLED(CONFIG_X86_32) && efi_enabled(EFI_MEMMAP))
 		efi_memattr_init();
 
 	efi_tpm_eventlog_init();
@@ -688,7 +691,8 @@ static __initdata struct params fdt_params[] = {
 	UEFI_PARAM("MemMap Address", "linux,uefi-mmap-start", mmap),
 	UEFI_PARAM("MemMap Size", "linux,uefi-mmap-size", mmap_size),
 	UEFI_PARAM("MemMap Desc. Size", "linux,uefi-mmap-desc-size", desc_size),
-	UEFI_PARAM("MemMap Desc. Version", "linux,uefi-mmap-desc-ver", desc_ver)
+	UEFI_PARAM("MemMap Desc. Version", "linux,uefi-mmap-desc-ver", desc_ver),
+	UEFI_PARAM("Secure Boot Enabled", "linux,uefi-secure-boot", secure_boot)
 };
 
 static __initdata struct params xen_fdt_params[] = {
@@ -918,40 +922,101 @@ int efi_mem_type(unsigned long phys_addr)
 }
 #endif
 
+struct efi_error_code {
+	efi_status_t status;
+	int errno;
+	const char *description;
+};
+
+static const struct efi_error_code efi_error_codes[] = {
+	{ EFI_SUCCESS, 0, "Success"},
+#if 0
+	{ EFI_LOAD_ERROR, -EPICK_AN_ERRNO, "Load Error"},
+#endif
+	{ EFI_INVALID_PARAMETER, -EINVAL, "Invalid Parameter"},
+	{ EFI_UNSUPPORTED, -ENOSYS, "Unsupported"},
+	{ EFI_BAD_BUFFER_SIZE, -ENOSPC, "Bad Buffer Size"},
+	{ EFI_BUFFER_TOO_SMALL, -ENOSPC, "Buffer Too Small"},
+	{ EFI_NOT_READY, -EAGAIN, "Not Ready"},
+	{ EFI_DEVICE_ERROR, -EIO, "Device Error"},
+	{ EFI_WRITE_PROTECTED, -EROFS, "Write Protected"},
+	{ EFI_OUT_OF_RESOURCES, -ENOMEM, "Out of Resources"},
+#if 0
+	{ EFI_VOLUME_CORRUPTED, -EPICK_AN_ERRNO, "Volume Corrupt"},
+	{ EFI_VOLUME_FULL, -EPICK_AN_ERRNO, "Volume Full"},
+	{ EFI_NO_MEDIA, -EPICK_AN_ERRNO, "No Media"},
+	{ EFI_MEDIA_CHANGED, -EPICK_AN_ERRNO, "Media changed"},
+#endif
+	{ EFI_NOT_FOUND, -ENOENT, "Not Found"},
+#if 0
+	{ EFI_ACCESS_DENIED, -EPICK_AN_ERRNO, "Access Denied"},
+	{ EFI_NO_RESPONSE, -EPICK_AN_ERRNO, "No Response"},
+	{ EFI_NO_MAPPING, -EPICK_AN_ERRNO, "No mapping"},
+	{ EFI_TIMEOUT, -EPICK_AN_ERRNO, "Time out"},
+	{ EFI_NOT_STARTED, -EPICK_AN_ERRNO, "Not started"},
+	{ EFI_ALREADY_STARTED, -EPICK_AN_ERRNO, "Already started"},
+#endif
+	{ EFI_ABORTED, -EINTR, "Aborted"},
+#if 0
+	{ EFI_ICMP_ERROR, -EPICK_AN_ERRNO, "ICMP Error"},
+	{ EFI_TFTP_ERROR, -EPICK_AN_ERRNO, "TFTP Error"},
+	{ EFI_PROTOCOL_ERROR, -EPICK_AN_ERRNO, "Protocol Error"},
+	{ EFI_INCOMPATIBLE_VERSION, -EPICK_AN_ERRNO, "Incompatible Version"},
+#endif
+	{ EFI_SECURITY_VIOLATION, -EACCES, "Security Policy Violation"},
+#if 0
+	{ EFI_CRC_ERROR, -EPICK_AN_ERRNO, "CRC Error"},
+	{ EFI_END_OF_MEDIA, -EPICK_AN_ERRNO, "End of Media"},
+	{ EFI_END_OF_FILE, -EPICK_AN_ERRNO, "End of File"},
+	{ EFI_INVALID_LANGUAGE, -EPICK_AN_ERRNO, "Invalid Languages"},
+	{ EFI_COMPROMISED_DATA, -EPICK_AN_ERRNO, "Compromised Data"},
+
+	// warnings
+	{ EFI_WARN_UNKOWN_GLYPH, -EPICK_AN_ERRNO, "Warning Unknown Glyph"},
+	{ EFI_WARN_DELETE_FAILURE, -EPICK_AN_ERRNO, "Warning Delete Failure"},
+	{ EFI_WARN_WRITE_FAILURE, -EPICK_AN_ERRNO, "Warning Write Failure"},
+	{ EFI_WARN_BUFFER_TOO_SMALL, -EPICK_AN_ERRNO, "Warning Buffer Too Small"},
+#endif
+};
+
+static int
+efi_status_cmp_bsearch(const void *key, const void *item)
+{
+	u64 status = (u64)(uintptr_t)key;
+	struct efi_error_code *code = (struct efi_error_code *)item;
+
+	if (status < code->status)
+		return -1;
+	if (status > code->status)
+		return 1;
+	return 0;
+}
+
 int efi_status_to_err(efi_status_t status)
 {
-	int err;
+	struct efi_error_code *found;
+	size_t num = sizeof(efi_error_codes) / sizeof(struct efi_error_code);
 
-	switch (status) {
-	case EFI_SUCCESS:
-		err = 0;
-		break;
-	case EFI_INVALID_PARAMETER:
-		err = -EINVAL;
-		break;
-	case EFI_OUT_OF_RESOURCES:
-		err = -ENOSPC;
-		break;
-	case EFI_DEVICE_ERROR:
-		err = -EIO;
-		break;
-	case EFI_WRITE_PROTECTED:
-		err = -EROFS;
-		break;
-	case EFI_SECURITY_VIOLATION:
-		err = -EACCES;
-		break;
-	case EFI_NOT_FOUND:
-		err = -ENOENT;
-		break;
-	case EFI_ABORTED:
-		err = -EINTR;
-		break;
-	default:
-		err = -EINVAL;
-	}
+	found = bsearch((void *)(uintptr_t)status, efi_error_codes,
+			sizeof(struct efi_error_code), num,
+			efi_status_cmp_bsearch);
+	if (!found)
+		return -EINVAL;
+	return found->errno;
+}
 
-	return err;
+const char *
+efi_status_to_str(efi_status_t status)
+{
+	struct efi_error_code *found;
+	size_t num = sizeof(efi_error_codes) / sizeof(struct efi_error_code);
+
+	found = bsearch((void *)(uintptr_t)status, efi_error_codes,
+			sizeof(struct efi_error_code), num,
+			efi_status_cmp_bsearch);
+	if (!found)
+		return "Unknown error code";
+	return found->description;
 }
 
 static DEFINE_SPINLOCK(efi_mem_reserve_persistent_lock);
@@ -968,6 +1033,24 @@ static int __init efi_memreserve_map_root(void)
 	if (WARN_ON_ONCE(!efi_memreserve_root))
 		return -ENOMEM;
 	return 0;
+}
+
+static int efi_mem_reserve_iomem(phys_addr_t addr, u64 size)
+{
+	struct resource *res, *parent;
+
+	res = kzalloc(sizeof(struct resource), GFP_ATOMIC);
+	if (!res)
+		return -ENOMEM;
+
+	res->name	= "reserved";
+	res->flags	= IORESOURCE_MEM;
+	res->start	= addr;
+	res->end	= addr + size - 1;
+
+	/* we expect a conflict with a 'System RAM' region */
+	parent = request_resource_conflict(&iomem_resource, res);
+	return parent ? request_resource(parent, res) : 0;
 }
 
 int __ref efi_mem_reserve_persistent(phys_addr_t addr, u64 size)
@@ -994,7 +1077,7 @@ int __ref efi_mem_reserve_persistent(phys_addr_t addr, u64 size)
 			rsv->entry[index].size = size;
 
 			memunmap(rsv);
-			return 0;
+			return efi_mem_reserve_iomem(addr, size);
 		}
 		memunmap(rsv);
 	}
@@ -1003,6 +1086,12 @@ int __ref efi_mem_reserve_persistent(phys_addr_t addr, u64 size)
 	rsv = (struct linux_efi_memreserve *)__get_free_page(GFP_ATOMIC);
 	if (!rsv)
 		return -ENOMEM;
+
+	rc = efi_mem_reserve_iomem(__pa(rsv), SZ_4K);
+	if (rc) {
+		free_page((unsigned long)rsv);
+		return rc;
+	}
 
 	/*
 	 * The memremap() call above assumes that a linux_efi_memreserve entry
@@ -1020,7 +1109,7 @@ int __ref efi_mem_reserve_persistent(phys_addr_t addr, u64 size)
 	efi_memreserve_root->next = __pa(rsv);
 	spin_unlock(&efi_mem_reserve_persistent_lock);
 
-	return 0;
+	return efi_mem_reserve_iomem(addr, size);
 }
 
 static int __init efi_memreserve_root_init(void)

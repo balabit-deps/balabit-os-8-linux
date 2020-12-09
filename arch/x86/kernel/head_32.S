@@ -26,6 +26,7 @@
 #include <asm/bootparam.h>
 #include <asm/export.h>
 #include <asm/pgtable_32.h>
+#include <asm/nospec-branch.h>
 
 /* Physical address */
 #define pa(X) ((X) - __PAGE_OFFSET)
@@ -153,6 +154,7 @@ ENTRY(startup_32)
 
 	movl pa(subarch_entries)(,%eax,4), %eax
 	subl $__PAGE_OFFSET, %eax
+	ANNOTATE_RETPOLINE_SAFE
 	jmp *%eax
 
 .Lbad_subarch:
@@ -302,6 +304,7 @@ ENTRY(startup_32_smp)
 	movl setup_once_ref,%eax
 	andl %eax,%eax
 	jz 1f				# Did we do this already?
+	ANNOTATE_RETPOLINE_SAFE
 	call *%eax
 1:
 
@@ -571,6 +574,16 @@ ENTRY(initial_page_table)
 #  error "Kernel PMDs should be 1, 2 or 3"
 # endif
 	.align PAGE_SIZE		/* needs to be page-sized too */
+
+#ifdef CONFIG_PAGE_TABLE_ISOLATION
+	/*
+	 * PTI needs another page so sync_initial_pagetable() works correctly
+	 * and does not scribble over the data which is placed behind the
+	 * actual initial_page_table. See clone_pgd_range().
+	 */
+	.fill 1024, 4, 0
+#endif
+
 #endif
 
 .data

@@ -15,6 +15,7 @@
 
 #include <sound/hdaudio.h>
 #include <sound/soc.h>
+#include <sound/control.h>
 
 #include <sound/sof.h>
 #include <sound/sof/stream.h> /* needs to be included before control.h */
@@ -305,6 +306,12 @@ struct snd_sof_pcm {
 	bool prepared[2]; /* PCM_PARAMS set successfully */
 };
 
+struct snd_sof_led_control {
+	unsigned int use_led;
+	unsigned int direction;
+	int led_value;
+};
+
 /* ALSA SOF Kcontrol device */
 struct snd_sof_control {
 	struct snd_sof_dev *sdev;
@@ -319,6 +326,8 @@ struct snd_sof_control {
 	u32 *volume_table; /* volume table computed from tlv data*/
 
 	struct list_head list;	/* list in sdev control list */
+
+	struct snd_sof_led_control led_ctl;
 };
 
 /* ASoC SOF DAPM widget */
@@ -356,6 +365,15 @@ struct snd_sof_dai {
 	struct list_head list;	/* list in sdev dai list */
 };
 
+enum snd_sof_fw_state {
+	SOF_FW_BOOT_NOT_STARTED = 0,
+	SOF_FW_BOOT_PREPARE,
+	SOF_FW_BOOT_IN_PROGRESS,
+	SOF_FW_BOOT_FAILED,
+	SOF_FW_BOOT_READY_FAILED, /* firmware booted but fw_ready op failed */
+	SOF_FW_BOOT_COMPLETE,
+};
+
 /*
  * SOF Device Level.
  */
@@ -372,7 +390,7 @@ struct snd_sof_dev {
 
 	/* DSP firmware boot */
 	wait_queue_head_t boot_wait;
-	u32 boot_complete;
+	enum snd_sof_fw_state fw_state;
 	u32 first_boot;
 
 	/* work queue in case the probe is implemented in two steps */

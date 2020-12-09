@@ -49,6 +49,7 @@
 #include <linux/memory.h>
 #include <linux/compat.h>
 #include <linux/start_kernel.h>
+#include <linux/security.h>
 
 #include <asm/boot_data.h>
 #include <asm/ipl.h>
@@ -73,6 +74,7 @@
 #include <asm/nospec-branch.h>
 #include <asm/mem_detect.h>
 #include <asm/uv.h>
+#include <asm/asm-offsets.h>
 #include "entry.h"
 
 /*
@@ -92,10 +94,6 @@ char elf_platform[ELF_PLATFORM_SIZE];
 
 unsigned long int_hwcap = 0;
 
-#ifdef CONFIG_PROTECTED_VIRTUALIZATION_GUEST
-int __bootdata_preserved(prot_virt_guest);
-#endif
-
 int __bootdata(noexec_disabled);
 int __bootdata(memory_end_set);
 unsigned long __bootdata(memory_end);
@@ -111,6 +109,8 @@ unsigned long __bootdata_preserved(__etext_dma);
 unsigned long __bootdata_preserved(__sdma);
 unsigned long __bootdata_preserved(__edma);
 unsigned long __bootdata_preserved(__kaslr_offset);
+unsigned int __bootdata_preserved(zlib_dfltcc_support);
+EXPORT_SYMBOL(zlib_dfltcc_support);
 
 unsigned long VMALLOC_START;
 EXPORT_SYMBOL(VMALLOC_START);
@@ -355,7 +355,6 @@ early_initcall(async_stack_realloc);
 
 void __init arch_call_rest_init(void)
 {
-	struct stack_frame *frame;
 	unsigned long stack;
 
 	stack = stack_alloc();
@@ -368,13 +367,7 @@ void __init arch_call_rest_init(void)
 	set_task_stack_end_magic(current);
 	stack += STACK_INIT_OFFSET;
 	S390_lowcore.kernel_stack = stack;
-	frame = (struct stack_frame *) stack;
-	memset(frame, 0, sizeof(*frame));
-	/* Branch to rest_init on the new stack, never returns */
-	asm volatile(
-		"	la	15,0(%[_frame])\n"
-		"	jg	rest_init\n"
-		: : [_frame] "a" (frame));
+	CALL_ON_STACK_NORETURN(rest_init, stack);
 }
 
 static void __init setup_lowcore_dat_off(void)
@@ -457,6 +450,8 @@ static void __init setup_lowcore_dat_off(void)
 	lc->spinlock_index = 0;
 	arch_spin_lock_setup(0);
 	lc->br_r1_trampoline = 0x07f1;	/* br %r1 */
+	lc->return_lpswe = gen_lpswe(__LC_RETURN_PSW);
+	lc->return_mcck_lpswe = gen_lpswe(__LC_RETURN_MCCK_PSW);
 
 	set_prefix((u32)(unsigned long) lc);
 	lowcore_ptr[0] = lc;
@@ -571,6 +566,9 @@ static void __init setup_memory_end(void)
 			vmax = _REGION1_SIZE; /* 4-level kernel page table */
 	}
 
+	if (is_prot_virt_host())
+		adjust_to_uv_max(&vmax);
+
 	/* module area is at the end of the kernel address space. */
 	MODULES_END = vmax;
 	MODULES_VADDR = MODULES_END - MODULES_LEN;
@@ -631,7 +629,7 @@ static struct notifier_block kdump_mem_nb = {
 /*
  * Make sure that the area behind memory_end is protected
  */
-static void reserve_memory_end(void)
+static void __init reserve_memory_end(void)
 {
 	if (memory_end_set)
 		memblock_reserve(memory_end, ULONG_MAX);
@@ -640,7 +638,7 @@ static void reserve_memory_end(void)
 /*
  * Make sure that oldmem, where the dump is stored, is protected
  */
-static void reserve_oldmem(void)
+static void __init reserve_oldmem(void)
 {
 #ifdef CONFIG_CRASH_DUMP
 	if (OLDMEM_BASE)
@@ -652,7 +650,7 @@ static void reserve_oldmem(void)
 /*
  * Make sure that oldmem, where the dump is stored, is protected
  */
-static void remove_oldmem(void)
+static void __init remove_oldmem(void)
 {
 #ifdef CONFIG_CRASH_DUMP
 	if (OLDMEM_BASE)
@@ -1059,7 +1057,7 @@ static void __init log_component_list(void)
 
 	if (!early_ipl_comp_list_addr)
 		return;
-	if (ipl_block.hdr.flags & IPL_PL_FLAG_IPLSR)
+	if (ipl_block.hdr.flags & IPL_PL_FLAG_SIPL)
 		pr_info("Linux is running with Secure-IPL enabled\n");
 	else
 		pr_info("Linux is running with Secure-IPL disabled\n");
@@ -1103,6 +1101,12 @@ void __init setup_arch(char **cmdline_p)
 
 	log_component_list();
 
+#ifdef CONFIG_LOCK_DOWN_IN_SECURE_BOOT
+	if (ipl_get_secureboot())
+		security_lock_kernel_down("Secure IPL",
+					  LOCKDOWN_INTEGRITY_MAX);
+#endif
+
 	/* Have one command line that is parsed and saved in /proc/cmdline */
 	/* boot_command_line has been already set up in early.c */
 	*cmdline_p = boot_command_line;
@@ -1117,6 +1121,7 @@ void __init setup_arch(char **cmdline_p)
 	if (IS_ENABLED(CONFIG_EXPOLINE_AUTO))
 		nospec_auto_detect();
 
+	jump_label_init();
 	parse_early_param();
 #ifdef CONFIG_CRASH_DUMP
 	/* Deactivate elfcorehdr= kernel parameter */
@@ -1151,6 +1156,8 @@ void __init setup_arch(char **cmdline_p)
 	 */
 	memblock_trim_memory(1UL << (MAX_ORDER - 1 + PAGE_SHIFT));
 
+	if (is_prot_virt_host())
+		setup_uv();
 	setup_memory_end();
 	setup_memory();
 	dma_contiguous_reserve(memory_end);

@@ -23,12 +23,12 @@ static inline bool ceph_has_realms_with_quotas(struct inode *inode)
 {
 	struct ceph_mds_client *mdsc = ceph_inode_to_client(inode)->mdsc;
 	struct super_block *sb = mdsc->fsc->sb;
+	struct inode *root = d_inode(sb->s_root);
 
 	if (atomic64_read(&mdsc->quotarealms_count) > 0)
 		return true;
 	/* if root is the real CephFS root, we don't have quota realms */
-	if (sb->s_root->d_inode &&
-	    (sb->s_root->d_inode->i_ino == CEPH_INO_ROOT))
+	if (root && ceph_ino(root) == CEPH_INO_ROOT)
 		return false;
 	/* otherwise, we can't know for sure */
 	return true;
@@ -159,8 +159,8 @@ static struct inode *lookup_quotarealm_inode(struct ceph_mds_client *mdsc,
 	}
 
 	if (IS_ERR(in)) {
-		pr_warn("Can't lookup inode %llx (err: %ld)\n",
-			realm->ino, PTR_ERR(in));
+		dout("Can't lookup inode %llx (err: %ld)\n",
+		     realm->ino, PTR_ERR(in));
 		qri->timeout = jiffies + msecs_to_jiffies(60 * 1000); /* XXX */
 	} else {
 		qri->timeout = 0;

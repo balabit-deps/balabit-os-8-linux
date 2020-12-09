@@ -855,7 +855,7 @@ static int bnxt_re_init_user_qp(struct bnxt_re_dev *rdev, struct bnxt_re_pd *pd,
 		bytes += (qplib_qp->sq.max_wqe * psn_sz);
 	}
 	bytes = PAGE_ALIGN(bytes);
-	umem = ib_umem_get(udata, ureq.qpsva, bytes, IB_ACCESS_LOCAL_WRITE, 1);
+	umem = ib_umem_get(udata, ureq.qpsva, bytes, IB_ACCESS_LOCAL_WRITE);
 	if (IS_ERR(umem))
 		return PTR_ERR(umem);
 
@@ -869,7 +869,7 @@ static int bnxt_re_init_user_qp(struct bnxt_re_dev *rdev, struct bnxt_re_pd *pd,
 		bytes = (qplib_qp->rq.max_wqe * BNXT_QPLIB_MAX_RQE_ENTRY_SIZE);
 		bytes = PAGE_ALIGN(bytes);
 		umem = ib_umem_get(udata, ureq.qprva, bytes,
-				   IB_ACCESS_LOCAL_WRITE, 1);
+				   IB_ACCESS_LOCAL_WRITE);
 		if (IS_ERR(umem))
 			goto rqfail;
 		qp->rumem = umem;
@@ -1322,7 +1322,7 @@ static int bnxt_re_init_user_srq(struct bnxt_re_dev *rdev,
 
 	bytes = (qplib_srq->max_wqe * BNXT_QPLIB_MAX_RQE_ENTRY_SIZE);
 	bytes = PAGE_ALIGN(bytes);
-	umem = ib_umem_get(udata, ureq.srqva, bytes, IB_ACCESS_LOCAL_WRITE, 1);
+	umem = ib_umem_get(udata, ureq.srqva, bytes, IB_ACCESS_LOCAL_WRITE);
 	if (IS_ERR(umem))
 		return PTR_ERR(umem);
 
@@ -2565,7 +2565,7 @@ int bnxt_re_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 
 		cq->umem = ib_umem_get(udata, req.cq_va,
 				       entries * sizeof(struct cq_base),
-				       IB_ACCESS_LOCAL_WRITE, 1);
+				       IB_ACCESS_LOCAL_WRITE);
 		if (IS_ERR(cq->umem)) {
 			rc = PTR_ERR(cq->umem);
 			goto fail;
@@ -2973,6 +2973,19 @@ static void bnxt_re_process_res_rawqp1_wc(struct ib_wc *wc,
 	wc->wc_flags |= IB_WC_GRH;
 }
 
+static bool bnxt_re_check_if_vlan_valid(struct bnxt_re_dev *rdev,
+					u16 vlan_id)
+{
+	/*
+	 * Check if the vlan is configured in the host.  If not configured, it
+	 * can be a transparent VLAN. So dont report the vlan id.
+	 */
+	if (!__vlan_find_dev_deep_rcu(rdev->netdev,
+				      htons(ETH_P_8021Q), vlan_id))
+		return false;
+	return true;
+}
+
 static bool bnxt_re_is_vlan_pkt(struct bnxt_qplib_cqe *orig_cqe,
 				u16 *vid, u8 *sl)
 {
@@ -3041,9 +3054,11 @@ static void bnxt_re_process_res_shadow_qp_wc(struct bnxt_re_qp *qp,
 	wc->src_qp = orig_cqe->src_qp;
 	memcpy(wc->smac, orig_cqe->smac, ETH_ALEN);
 	if (bnxt_re_is_vlan_pkt(orig_cqe, &vlan_id, &sl)) {
-		wc->vlan_id = vlan_id;
-		wc->sl = sl;
-		wc->wc_flags |= IB_WC_WITH_VLAN;
+		if (bnxt_re_check_if_vlan_valid(rdev, vlan_id)) {
+			wc->vlan_id = vlan_id;
+			wc->sl = sl;
+			wc->wc_flags |= IB_WC_WITH_VLAN;
+		}
 	}
 	wc->port_num = 1;
 	wc->vendor_err = orig_cqe->status;
@@ -3323,8 +3338,10 @@ int bnxt_re_dereg_mr(struct ib_mr *ib_mr, struct ib_udata *udata)
 	int rc;
 
 	rc = bnxt_qplib_free_mrw(&rdev->qplib_res, &mr->qplib_mr);
-	if (rc)
+	if (rc) {
 		dev_err(rdev_to_dev(rdev), "Dereg MR failed: %#x\n", rc);
+		return rc;
+	}
 
 	if (mr->pages) {
 		rc = bnxt_qplib_free_fast_reg_page_list(&rdev->qplib_res,
@@ -3530,7 +3547,7 @@ struct ib_mr *bnxt_re_reg_user_mr(struct ib_pd *ib_pd, u64 start, u64 length,
 	/* The fixed portion of the rkey is the same as the lkey */
 	mr->ib_mr.rkey = mr->qplib_mr.rkey;
 
-	umem = ib_umem_get(udata, start, length, mr_access_flags, 0);
+	umem = ib_umem_get(udata, start, length, mr_access_flags);
 	if (IS_ERR(umem)) {
 		dev_err(rdev_to_dev(rdev), "Failed to get umem");
 		rc = -EFAULT;

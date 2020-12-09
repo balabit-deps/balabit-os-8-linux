@@ -61,6 +61,7 @@ struct usb_hub {
 	unsigned		quiescing:1;
 	unsigned		disconnected:1;
 	unsigned		in_reset:1;
+	unsigned		quirk_disable_autosuspend:1;
 
 	unsigned		quirk_check_port_auto_suspend:1;
 
@@ -113,8 +114,7 @@ extern int usb_hub_create_port_device(struct usb_hub *hub,
 		int port1);
 extern void usb_hub_remove_port_device(struct usb_hub *hub,
 		int port1);
-extern int usb_hub_set_port_power(struct usb_device *hdev, struct usb_hub *hub,
-		int port1, bool set);
+extern int usb_hub_set_port_power(struct usb_hub *hub, int port1, bool set);
 extern struct usb_hub *usb_hub_to_struct_hub(struct usb_device *hdev);
 extern int hub_port_debounce(struct usb_hub *hub, int port1,
 		bool must_be_connected);

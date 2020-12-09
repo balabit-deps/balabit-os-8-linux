@@ -143,7 +143,7 @@ struct drm_i915_gem_object {
 	 */
 	u16 write_domain;
 
-	struct intel_frontbuffer *frontbuffer;
+	struct intel_frontbuffer __rcu *frontbuffer;
 
 	/** Current tiling stride for the object, if it's tiled. */
 	unsigned int tiling_and_stride;
@@ -240,9 +240,6 @@ struct drm_i915_gem_object {
 
 		void *gvt_info;
 	};
-
-	/** for phys allocated objects */
-	struct drm_dma_handle *phys_handle;
 };
 
 static inline struct drm_i915_gem_object *

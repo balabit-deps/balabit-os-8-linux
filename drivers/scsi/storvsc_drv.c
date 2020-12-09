@@ -1834,10 +1834,18 @@ static int storvsc_probe(struct hv_device *device,
 	 * from the host.
 	 */
 	host->sg_tablesize = (stor_device->max_transfer_bytes >> PAGE_SHIFT);
+#if defined(CONFIG_X86_32)
+	dev_warn(&device->device, "adjusting sg_tablesize 0x%x -> 0x%x",
+			host->sg_tablesize, MAX_MULTIPAGE_BUFFER_COUNT);
+	host->sg_tablesize = MAX_MULTIPAGE_BUFFER_COUNT;
+#endif
+
 	/*
+	 * For non-IDE disks, the host supports multiple channels.
 	 * Set the number of HW queues we are supporting.
 	 */
-	host->nr_hw_queues = num_present_cpus();
+	if (!dev_is_ide)
+		host->nr_hw_queues = num_present_cpus();
 
 	/*
 	 * Set the error handler work queue.

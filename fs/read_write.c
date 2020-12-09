@@ -468,6 +468,7 @@ ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(vfs_read);
 
 static ssize_t new_sync_write(struct file *filp, const char __user *buf, size_t len, loff_t *ppos)
 {
@@ -497,6 +498,30 @@ static ssize_t __vfs_write(struct file *file, const char __user *p,
 	else
 		return -EINVAL;
 }
+
+vfs_readf_t vfs_readf(struct file *file)
+{
+	const struct file_operations *fop = file->f_op;
+
+	if (fop->read)
+		return fop->read;
+	if (fop->read_iter)
+		return new_sync_read;
+	return ERR_PTR(-ENOSYS); /* doesn't have ->read(|_iter)() op */
+}
+EXPORT_SYMBOL_GPL(vfs_readf);
+
+vfs_writef_t vfs_writef(struct file *file)
+{
+	const struct file_operations *fop = file->f_op;
+
+	if (fop->write)
+		return fop->write;
+	if (fop->write_iter)
+		return new_sync_write;
+	return ERR_PTR(-ENOSYS); /* doesn't have ->write(|_iter)() op */
+}
+EXPORT_SYMBOL_GPL(vfs_writef);
 
 ssize_t __kernel_write(struct file *file, const void *buf, size_t count, loff_t *pos)
 {
@@ -566,6 +591,7 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(vfs_write);
 
 /* file_ppos returns &file->f_pos or NULL if file is stream */
 static inline loff_t *file_ppos(struct file *file)
@@ -1777,10 +1803,9 @@ static int remap_verify_area(struct file *file, loff_t pos, loff_t len,
  * else.  Assume that the offsets have already been checked for block
  * alignment.
  *
- * For deduplication we always scale down to the previous block because we
- * can't meaningfully compare post-EOF contents.
- *
- * For clone we only link a partial EOF block above the destination file's EOF.
+ * For clone we only link a partial EOF block above or at the destination file's
+ * EOF.  For deduplication we accept a partial EOF block only if it ends at the
+ * destination file's EOF (can not link it into the middle of a file).
  *
  * Shorten the request if possible.
  */
@@ -1796,8 +1821,7 @@ static int generic_remap_check_len(struct inode *inode_in,
 	if ((*len & blkmask) == 0)
 		return 0;
 
-	if ((remap_flags & REMAP_FILE_DEDUP) ||
-	    pos_out + *len < i_size_read(inode_out))
+	if (pos_out + *len < i_size_read(inode_out))
 		new_len &= ~blkmask;
 
 	if (new_len == *len)

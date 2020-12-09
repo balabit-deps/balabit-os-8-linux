@@ -252,7 +252,7 @@ smb2_reconnect(__le16 smb2_command, struct cifs_tcon *tcon)
 	if (tcon == NULL)
 		return 0;
 
-	if (smb2_command == SMB2_TREE_CONNECT || smb2_command == SMB2_IOCTL)
+	if (smb2_command == SMB2_TREE_CONNECT)
 		return 0;
 
 	if (tcon->tidStatus == CifsExiting) {
@@ -312,7 +312,7 @@ smb2_reconnect(__le16 smb2_command, struct cifs_tcon *tcon)
 		if (server->tcpStatus != CifsNeedReconnect)
 			break;
 
-		if (--retries)
+		if (retries && --retries)
 			continue;
 
 		/*
@@ -350,9 +350,14 @@ smb2_reconnect(__le16 smb2_command, struct cifs_tcon *tcon)
 	}
 
 	rc = cifs_negotiate_protocol(0, tcon->ses);
-	if (!rc && tcon->ses->need_reconnect)
+	if (!rc && tcon->ses->need_reconnect) {
 		rc = cifs_setup_session(0, tcon->ses, nls_codepage);
-
+		if ((rc == -EACCES) && !tcon->retry) {
+			rc = -EHOSTDOWN;
+			mutex_unlock(&tcon->ses->session_mutex);
+			goto failed;
+		}
+	}
 	if (rc || !tcon->need_reconnect) {
 		mutex_unlock(&tcon->ses->session_mutex);
 		goto out;
@@ -397,6 +402,7 @@ out:
 	case SMB2_SET_INFO:
 		rc = -EAGAIN;
 	}
+failed:
 	unload_nls(nls_codepage);
 	return rc;
 }
@@ -426,16 +432,9 @@ fill_small_buf(__le16 smb2_command, struct cifs_tcon *tcon, void *buf,
  * SMB information in the SMB header. If the return code is zero, this
  * function must have filled in request_buf pointer.
  */
-static int
-smb2_plain_req_init(__le16 smb2_command, struct cifs_tcon *tcon,
-		    void **request_buf, unsigned int *total_len)
+static int __smb2_plain_req_init(__le16 smb2_command, struct cifs_tcon *tcon,
+				  void **request_buf, unsigned int *total_len)
 {
-	int rc;
-
-	rc = smb2_reconnect(smb2_command, tcon);
-	if (rc)
-		return rc;
-
 	/* BB eventually switch this to SMB2 specific small buf size */
 	if (smb2_command == SMB2_SET_INFO)
 		*request_buf = cifs_buf_get();
@@ -456,7 +455,31 @@ smb2_plain_req_init(__le16 smb2_command, struct cifs_tcon *tcon,
 		cifs_stats_inc(&tcon->num_smbs_sent);
 	}
 
-	return rc;
+	return 0;
+}
+
+static int smb2_plain_req_init(__le16 smb2_command, struct cifs_tcon *tcon,
+			       void **request_buf, unsigned int *total_len)
+{
+	int rc;
+
+	rc = smb2_reconnect(smb2_command, tcon);
+	if (rc)
+		return rc;
+
+	return __smb2_plain_req_init(smb2_command, tcon, request_buf,
+				     total_len);
+}
+
+static int smb2_ioctl_req_init(u32 opcode, struct cifs_tcon *tcon,
+			       void **request_buf, unsigned int *total_len)
+{
+	/* Skip reconnect only for FSCTL_VALIDATE_NEGOTIATE_INFO IOCTLs */
+	if (opcode == FSCTL_VALIDATE_NEGOTIATE_INFO) {
+		return __smb2_plain_req_init(SMB2_IOCTL, tcon, request_buf,
+					     total_len);
+	}
+	return smb2_plain_req_init(SMB2_IOCTL, tcon, request_buf, total_len);
 }
 
 /* For explanation of negotiate contexts see MS-SMB2 section 2.2.3.1 */
@@ -1300,6 +1323,8 @@ SMB2_auth_kerberos(struct SMB2_sess_data *sess_data)
 	spnego_key = cifs_get_spnego_key(ses);
 	if (IS_ERR(spnego_key)) {
 		rc = PTR_ERR(spnego_key);
+		if (rc == -ENOKEY)
+			cifs_dbg(VFS, "Verify user has a krb5 ticket and keyutils is installed\n");
 		spnego_key = NULL;
 		goto out;
 	}
@@ -2627,6 +2652,7 @@ SMB2_open(const unsigned int xid, struct cifs_open_parms *oparms, __le16 *path,
 	atomic_inc(&tcon->num_remote_opens);
 	oparms->fid->persistent_fid = rsp->PersistentFileId;
 	oparms->fid->volatile_fid = rsp->VolatileFileId;
+	oparms->fid->access = oparms->desired_access;
 #ifdef CONFIG_CIFS_DEBUG2
 	oparms->fid->mid = le64_to_cpu(rsp->sync_hdr.MessageId);
 #endif /* CIFS_DEBUG2 */
@@ -2661,7 +2687,7 @@ SMB2_ioctl_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
 	int rc;
 	char *in_data_buf;
 
-	rc = smb2_plain_req_init(SMB2_IOCTL, tcon, (void **) &req, &total_len);
+	rc = smb2_ioctl_req_init(opcode, tcon, (void **) &req, &total_len);
 	if (rc)
 		return rc;
 
@@ -2723,7 +2749,9 @@ SMB2_ioctl_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
 	 * response size smaller.
 	 */
 	req->MaxOutputResponse = cpu_to_le32(max_response_size);
-
+	req->sync_hdr.CreditCharge =
+		cpu_to_le16(DIV_ROUND_UP(max(indatalen, max_response_size),
+					 SMB2_MAX_BUFFER_SIZE));
 	if (is_fsctl)
 		req->Flags = cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL);
 	else
@@ -2890,7 +2918,7 @@ SMB2_set_compression(const unsigned int xid, struct cifs_tcon *tcon,
 
 int
 SMB2_close_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
-		u64 persistent_fid, u64 volatile_fid)
+		u64 persistent_fid, u64 volatile_fid, bool query_attrs)
 {
 	struct smb2_close_req *req;
 	struct kvec *iov = rqst->rq_iov;
@@ -2903,6 +2931,10 @@ SMB2_close_init(struct cifs_tcon *tcon, struct smb_rqst *rqst,
 
 	req->PersistentFileId = persistent_fid;
 	req->VolatileFileId = volatile_fid;
+	if (query_attrs)
+		req->Flags = SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB;
+	else
+		req->Flags = 0;
 	iov[0].iov_base = (char *)req;
 	iov[0].iov_len = total_len;
 
@@ -2917,8 +2949,9 @@ SMB2_close_free(struct smb_rqst *rqst)
 }
 
 int
-SMB2_close_flags(const unsigned int xid, struct cifs_tcon *tcon,
-		 u64 persistent_fid, u64 volatile_fid, int flags)
+__SMB2_close(const unsigned int xid, struct cifs_tcon *tcon,
+	     u64 persistent_fid, u64 volatile_fid,
+	     struct smb2_file_network_open_info *pbuf)
 {
 	struct smb_rqst rqst;
 	struct smb2_close_rsp *rsp = NULL;
@@ -2927,6 +2960,8 @@ SMB2_close_flags(const unsigned int xid, struct cifs_tcon *tcon,
 	struct kvec rsp_iov;
 	int resp_buftype = CIFS_NO_BUFFER;
 	int rc = 0;
+	int flags = 0;
+	bool query_attrs = false;
 
 	cifs_dbg(FYI, "Close\n");
 
@@ -2941,8 +2976,13 @@ SMB2_close_flags(const unsigned int xid, struct cifs_tcon *tcon,
 	rqst.rq_iov = iov;
 	rqst.rq_nvec = 1;
 
+	/* check if need to ask server to return timestamps in close response */
+	if (pbuf)
+		query_attrs = true;
+
 	trace_smb3_close_enter(xid, persistent_fid, tcon->tid, ses->Suid);
-	rc = SMB2_close_init(tcon, &rqst, persistent_fid, volatile_fid);
+	rc = SMB2_close_init(tcon, &rqst, persistent_fid, volatile_fid,
+			     query_attrs);
 	if (rc)
 		goto close_exit;
 
@@ -2954,25 +2994,40 @@ SMB2_close_flags(const unsigned int xid, struct cifs_tcon *tcon,
 		trace_smb3_close_err(xid, persistent_fid, tcon->tid, ses->Suid,
 				     rc);
 		goto close_exit;
-	} else
+	} else {
 		trace_smb3_close_done(xid, persistent_fid, tcon->tid,
 				      ses->Suid);
+		/*
+		 * Note that have to subtract 4 since struct network_open_info
+		 * has a final 4 byte pad that close response does not have
+		 */
+		if (pbuf)
+			memcpy(pbuf, (char *)&rsp->CreationTime, sizeof(*pbuf) - 4);
+	}
 
 	atomic_dec(&tcon->num_remote_opens);
-
-	/* BB FIXME - decode close response, update inode for caching */
-
 close_exit:
 	SMB2_close_free(&rqst);
 	free_rsp_buf(resp_buftype, rsp);
+
+	/* retry close in a worker thread if this one is interrupted */
+	if (rc == -EINTR) {
+		int tmp_rc;
+
+		tmp_rc = smb2_handle_cancelled_close(tcon, persistent_fid,
+						     volatile_fid);
+		if (tmp_rc)
+			cifs_dbg(VFS, "handle cancelled close fid 0x%llx returned error %d\n",
+				 persistent_fid, tmp_rc);
+	}
 	return rc;
 }
 
 int
 SMB2_close(const unsigned int xid, struct cifs_tcon *tcon,
-	   u64 persistent_fid, u64 volatile_fid)
+		u64 persistent_fid, u64 volatile_fid)
 {
-	return SMB2_close_flags(xid, tcon, persistent_fid, volatile_fid, 0);
+	return __SMB2_close(xid, tcon, persistent_fid, volatile_fid, NULL);
 }
 
 int
@@ -3880,6 +3935,9 @@ smb2_writev_callback(struct mid_q_entry *mid)
 				     wdata->cfile->fid.persistent_fid,
 				     tcon->tid, tcon->ses->Suid, wdata->offset,
 				     wdata->bytes, wdata->result);
+		if (wdata->result == -ENOSPC)
+			printk_once(KERN_WARNING "Out of space writing to %s\n",
+				    tcon->treeName);
 	} else
 		trace_smb3_write_done(0 /* no xid */,
 				      wdata->cfile->fid.persistent_fid,
