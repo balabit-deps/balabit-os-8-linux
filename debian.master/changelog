@@ -1,3 +1,15 @@
+linux (5.4.0-62.70) focal; urgency=medium
+
+  * focal/linux: 5.4.0-62.70 -proposed tracker (LP: #1911144)
+
+  * CVE-2020-28374
+    - SAUCE: target: fix XCOPY NAA identifier lookup
+
+  * Packaging resync (LP: #1786013)
+    - update dkms package versions
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Tue, 12 Jan 2021 13:00:40 +0100
+
 linux (5.4.0-60.67) focal; urgency=medium
 
   * Packaging resync (LP: #1786013)
