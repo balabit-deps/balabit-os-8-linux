@@ -45,6 +45,7 @@
 #define ETP_SMBUS_CALIBRATE_QUERY	0xC5
 
 #define ETP_SMBUS_REPORT_LEN		32
+#define ETP_SMBUS_REPORT_LEN2		7
 #define ETP_SMBUS_REPORT_OFFSET		2
 #define ETP_SMBUS_HELLOPACKET_LEN	5
 #define ETP_SMBUS_IAP_PASSWORD		0x1234
@@ -469,7 +470,21 @@ static int elan_smbus_write_fw_block(struct i2c_client *client,
 	return 0;
 }
 
-static int elan_smbus_get_report(struct i2c_client *client, u8 *report)
+static int elan_smbus_get_report_features(struct i2c_client *client, u8 pattern,
+					  unsigned int *features,
+					  unsigned int *report_len)
+{
+	/*
+	 * SMBus controllers with pattern 2 lack area info, as newer
+	 * high-precision packets use that space for coordinates.
+	 */
+	*features = pattern <= 0x01 ? ETP_FEATURE_REPORT_MK : 0;
+	*report_len = ETP_SMBUS_REPORT_LEN;
+	return 0;
+}
+
+static int elan_smbus_get_report(struct i2c_client *client,
+				 u8 *report, unsigned int report_len)
 {
 	int len;
 
@@ -483,10 +498,13 @@ static int elan_smbus_get_report(struct i2c_client *client, u8 *report)
 		return len;
 	}
 
-	if (len != ETP_SMBUS_REPORT_LEN) {
+	if (report[ETP_REPORT_ID_OFFSET] == ETP_TP_REPORT_ID2)
+		report_len = ETP_SMBUS_REPORT_LEN2;
+
+	if (len != report_len) {
 		dev_err(&client->dev,
 			"wrong report length (%d vs %d expected)\n",
-			len, ETP_SMBUS_REPORT_LEN);
+			len, report_len);
 		return -EIO;
 	}
 
@@ -534,6 +552,7 @@ const struct elan_transport_ops elan_smbus_ops = {
 	.write_fw_block		= elan_smbus_write_fw_block,
 	.finish_fw_update	= elan_smbus_finish_fw_update,
 
+	.get_report_features	= elan_smbus_get_report_features,
 	.get_report		= elan_smbus_get_report,
 	.get_pattern		= elan_smbus_get_pattern,
 };
