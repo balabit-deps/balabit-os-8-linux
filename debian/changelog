@@ -1,3 +1,32 @@
+linux (5.4.0-70.78) focal; urgency=medium
+
+  * CVE-2020-27170
+    - bpf: Fix off-by-one for area size in creating mask to left
+
+  * CVE-2020-27171
+    - bpf: Prohibit alu ops for pointer types not defining ptr_limit
+
+  * binary assembly failures with CONFIG_MODVERSIONS present (LP: #1919315)
+    - [Packaging] quiet (nomially) benign errors in BUILD script
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Fri, 19 Mar 2021 12:57:03 +0100
+
+linux (5.4.0-69.77) focal; urgency=medium
+
+  * CVE-2021-3444
+    - bpf: Fix 32 bit src register truncation on div/mod
+    - bpf: Fix truncation handling for mod32 dst reg wrt zero
+
+  * CVE-2021-27365
+    - scsi: iscsi: Verify lengths on passthrough PDUs
+    - sysfs: Add sysfs_emit and sysfs_emit_at to format sysfs output
+    - scsi: iscsi: Ensure sysfs attributes are limited to PAGE_SIZE
+
+  * CVE-2021-27363 // CVE-2021-27364
+    - scsi: iscsi: Restrict sessions and handles to admin capabilities
+
+ -- Kleber Sacilotto de Souza <kleber.souza@canonical.com>  Tue, 16 Mar 2021 12:29:06 +0100
+
 linux (5.4.0-67.75) focal; urgency=medium
 
   * focal/linux: 5.4.0-67.75 -proposed tracker (LP: #1916169)
