@@ -1,3 +1,19 @@
+linux (5.4.0-72.80) focal; urgency=medium
+
+  * overlayfs calls vfs_setxattr without cap_convert_nscap
+    - vfs: move cap_convert_nscap() call into vfs_setxattr()
+
+  * CVE-2021-3492
+    - SAUCE: shiftfs: free allocated memory in shiftfs_btrfs_ioctl_fd_replace()
+      error paths
+    - SAUCE: shiftfs: handle copy_to_user() return values correctly
+
+  * CVE-2021-29154
+    - SAUCE: bpf, x86: Validate computation of branch displacements for x86-64
+    - SAUCE: bpf, x86: Validate computation of branch displacements for x86-32
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Mon, 12 Apr 2021 17:12:08 +0200
+
 linux (5.4.0-71.79) focal; urgency=medium
 
   * focal/linux: 5.4.0-71.79 -proposed tracker (LP: #1921040)
