@@ -123,8 +123,8 @@ struct smb2_sync_pdu {
 	__le16 StructureSize2; /* size of wct area (varies, request specific) */
 } __packed;
 
-#define SMB3_AES128CCM_NONCE 11
-#define SMB3_AES128GCM_NONCE 12
+#define SMB3_AES_CCM_NONCE 11
+#define SMB3_AES_GCM_NONCE 12
 
 struct smb2_transform_hdr {
 	__le32 ProtocolId;	/* 0xFD 'S' 'M' 'B' */
@@ -298,6 +298,9 @@ struct smb2_preauth_neg_context {
 /* Encryption Algorithms Ciphers */
 #define SMB2_ENCRYPTION_AES128_CCM	cpu_to_le16(0x0001)
 #define SMB2_ENCRYPTION_AES128_GCM	cpu_to_le16(0x0002)
+/* we currently do not request AES256_CCM since presumably GCM faster */
+#define SMB2_ENCRYPTION_AES256_CCM      cpu_to_le16(0x0003)
+#define SMB2_ENCRYPTION_AES256_GCM      cpu_to_le16(0x0004)
 
 /* Min encrypt context data is one cipher so 2 bytes + 2 byte count field */
 #define MIN_ENCRYPT_CTXT_DATA_LEN	4
@@ -305,8 +308,9 @@ struct smb2_encryption_neg_context {
 	__le16	ContextType; /* 2 */
 	__le16	DataLength;
 	__le32	Reserved;
-	__le16	CipherCount; /* AES-128-GCM and AES-128-CCM */
-	__le16	Ciphers[2];
+	/* CipherCount usally 2, but can be 3 when AES256-GCM enabled */
+	__le16	CipherCount; /* AES128-GCM and AES128-CCM by default */
+	__le16	Ciphers[3];
 } __packed;
 
 /* See MS-SMB2 2.2.3.1.3 */

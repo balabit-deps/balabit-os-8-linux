@@ -512,10 +512,22 @@ static void
 build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt)
 {
 	pneg_ctxt->ContextType = SMB2_ENCRYPTION_CAPABILITIES;
-	pneg_ctxt->DataLength = cpu_to_le16(6); /* Cipher Count + two ciphers */
-	pneg_ctxt->CipherCount = cpu_to_le16(2);
-	pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_GCM;
-	pneg_ctxt->Ciphers[1] = SMB2_ENCRYPTION_AES128_CCM;
+	if (require_gcm_256) {
+		pneg_ctxt->DataLength = cpu_to_le16(4); /* Cipher Count + 1 cipher */
+		pneg_ctxt->CipherCount = cpu_to_le16(1);
+		pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES256_GCM;
+	} else if (enable_gcm_256) {
+		pneg_ctxt->DataLength = cpu_to_le16(8); /* Cipher Count + 3 ciphers */
+		pneg_ctxt->CipherCount = cpu_to_le16(3);
+		pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_GCM;
+		pneg_ctxt->Ciphers[1] = SMB2_ENCRYPTION_AES256_GCM;
+		pneg_ctxt->Ciphers[2] = SMB2_ENCRYPTION_AES128_CCM;
+	} else {
+		pneg_ctxt->DataLength = cpu_to_le16(6); /* Cipher Count + 2 ciphers */
+		pneg_ctxt->CipherCount = cpu_to_le16(2);
+		pneg_ctxt->Ciphers[0] = SMB2_ENCRYPTION_AES128_GCM;
+		pneg_ctxt->Ciphers[1] = SMB2_ENCRYPTION_AES128_CCM;
+	}
 }
 
 static unsigned int
@@ -664,8 +676,19 @@ static int decode_encrypt_ctx(struct TCP_Server_Info *server,
 		return -EINVAL;
 	}
 	cifs_dbg(FYI, "SMB311 cipher type:%d\n", le16_to_cpu(ctxt->Ciphers[0]));
-	if ((ctxt->Ciphers[0] != SMB2_ENCRYPTION_AES128_CCM) &&
-	    (ctxt->Ciphers[0] != SMB2_ENCRYPTION_AES128_GCM)) {
+	if (require_gcm_256) {
+		if (ctxt->Ciphers[0] != SMB2_ENCRYPTION_AES256_GCM) {
+			cifs_dbg(VFS, "Server does not support requested encryption type (AES256 GCM)\n");
+			return -EOPNOTSUPP;
+		}
+	} else if (ctxt->Ciphers[0] == 0) {
+		/* e.g. if server only supported AES256_CCM (very unlikely) */
+		cifs_dbg(VFS, "Server does not support requested encryption types\n");
+		return -EOPNOTSUPP;
+	} else if ((ctxt->Ciphers[0] != SMB2_ENCRYPTION_AES128_CCM) &&
+		   (ctxt->Ciphers[0] != SMB2_ENCRYPTION_AES128_GCM) &&
+		   (ctxt->Ciphers[0] != SMB2_ENCRYPTION_AES256_GCM)) {
+		/* server returned a cipher we didn't ask for */
 		printk_once(KERN_WARNING "invalid SMB3.11 cipher returned\n");
 		return -EINVAL;
 	}
@@ -3765,8 +3788,7 @@ smb2_async_readv(struct cifs_readdata *rdata)
 	if (rdata->credits.value > 0) {
 		shdr->CreditCharge = cpu_to_le16(DIV_ROUND_UP(rdata->bytes,
 						SMB2_MAX_BUFFER_SIZE));
-		shdr->CreditRequest =
-			cpu_to_le16(le16_to_cpu(shdr->CreditCharge) + 1);
+		shdr->CreditRequest = cpu_to_le16(le16_to_cpu(shdr->CreditCharge) + 8);
 
 		rc = adjust_credits(server, &rdata->credits, rdata->bytes);
 		if (rc)
@@ -4060,8 +4082,7 @@ smb2_async_writev(struct cifs_writedata *wdata,
 	if (wdata->credits.value > 0) {
 		shdr->CreditCharge = cpu_to_le16(DIV_ROUND_UP(wdata->bytes,
 						    SMB2_MAX_BUFFER_SIZE));
-		shdr->CreditRequest =
-			cpu_to_le16(le16_to_cpu(shdr->CreditCharge) + 1);
+		shdr->CreditRequest = cpu_to_le16(le16_to_cpu(shdr->CreditCharge) + 8);
 
 		rc = adjust_credits(server, &wdata->credits, wdata->bytes);
 		if (rc)
