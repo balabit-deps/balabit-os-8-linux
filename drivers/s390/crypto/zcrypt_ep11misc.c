@@ -170,24 +170,6 @@ int ep11_check_aeskeyblob(debug_info_t *dbg, int dbflvl,
 EXPORT_SYMBOL(ep11_check_aeskeyblob);
 
 /*
- * Helper function which calls zcrypt_send_ep11_cprb with
- * memory management segment adjusted to kernel space
- * so that the copy_from_user called within this
- * function do in fact copy from kernel space.
- */
-static inline int _zcrypt_send_ep11_cprb(struct ep11_urb *urb)
-{
-	int rc;
-	mm_segment_t old_fs = get_fs();
-
-	set_fs(KERNEL_DS);
-	rc = zcrypt_send_ep11_cprb(urb);
-	set_fs(old_fs);
-
-	return rc;
-}
-
-/*
  * Allocate and prepare ep11 cprb plus additional payload.
  */
 static inline struct ep11_cprb *alloc_cprb(size_t payload_len)
@@ -195,11 +177,10 @@ static inline struct ep11_cprb *alloc_cprb(size_t payload_len)
 	size_t len = sizeof(struct ep11_cprb) + payload_len;
 	struct ep11_cprb *cprb;
 
-	cprb = kmalloc(len, GFP_KERNEL);
+	cprb = kzalloc(len, GFP_KERNEL);
 	if (!cprb)
 		return NULL;
 
-	memset(cprb, 0, len);
 	cprb->cprb_len = sizeof(struct ep11_cprb);
 	cprb->cprb_ver_id = 0x04;
 	memcpy(cprb->func_id, "T4", 2);
@@ -400,7 +381,7 @@ static int ep11_query_info(u16 cardnr, u16 domain, u32 query_type,
 		 req, sizeof(*req) + sizeof(*req_pl),
 		 rep, sizeof(*rep) + sizeof(*rep_pl) + buflen);
 
-	rc = _zcrypt_send_ep11_cprb(urb);
+	rc = zcrypt_send_ep11_cprb(urb);
 	if (rc) {
 		DEBUG_ERR(
 			"%s zcrypt_send_ep11_cprb(card=%d dom=%d) failed, rc=%d\n",
@@ -638,7 +619,7 @@ int ep11_genaeskey(u16 card, u16 domain, u32 keybitsize, u32 keygenflags,
 		 req, sizeof(*req) + sizeof(*req_pl),
 		 rep, sizeof(*rep) + sizeof(*rep_pl));
 
-	rc = _zcrypt_send_ep11_cprb(urb);
+	rc = zcrypt_send_ep11_cprb(urb);
 	if (rc) {
 		DEBUG_ERR(
 			"%s zcrypt_send_ep11_cprb(card=%d dom=%d) failed, rc=%d\n",
@@ -758,7 +739,7 @@ static int ep11_cryptsingle(u16 card, u16 domain,
 		 req, sizeof(*req) + req_pl_size,
 		 rep, sizeof(*rep) + rep_pl_size);
 
-	rc = _zcrypt_send_ep11_cprb(urb);
+	rc = zcrypt_send_ep11_cprb(urb);
 	if (rc) {
 		DEBUG_ERR(
 			"%s zcrypt_send_ep11_cprb(card=%d dom=%d) failed, rc=%d\n",
@@ -906,7 +887,7 @@ static int ep11_unwrapkey(u16 card, u16 domain,
 		 req, sizeof(*req) + req_pl_size,
 		 rep, sizeof(*rep) + sizeof(*rep_pl));
 
-	rc = _zcrypt_send_ep11_cprb(urb);
+	rc = zcrypt_send_ep11_cprb(urb);
 	if (rc) {
 		DEBUG_ERR(
 			"%s zcrypt_send_ep11_cprb(card=%d dom=%d) failed, rc=%d\n",
@@ -1034,7 +1015,7 @@ static int ep11_wrapkey(u16 card, u16 domain,
 		 req, sizeof(*req) + req_pl_size,
 		 rep, sizeof(*rep) + sizeof(*rep_pl));
 
-	rc = _zcrypt_send_ep11_cprb(urb);
+	rc = zcrypt_send_ep11_cprb(urb);
 	if (rc) {
 		DEBUG_ERR(
 			"%s zcrypt_send_ep11_cprb(card=%d dom=%d) failed, rc=%d\n",
@@ -1217,9 +1198,9 @@ int ep11_findcard2(u32 **apqns, u32 *nr_apqns, u16 cardnr, u16 domain,
 	struct ep11_card_info eci;
 
 	/* fetch status of all crypto cards */
-	device_status = kmalloc_array(MAX_ZDEV_ENTRIES_EXT,
-				      sizeof(struct zcrypt_device_status_ext),
-				      GFP_KERNEL);
+	device_status = kvmalloc_array(MAX_ZDEV_ENTRIES_EXT,
+				       sizeof(struct zcrypt_device_status_ext),
+				       GFP_KERNEL);
 	if (!device_status)
 		return -ENOMEM;
 	zcrypt_device_status_mask_ext(device_status);
@@ -1227,7 +1208,7 @@ int ep11_findcard2(u32 **apqns, u32 *nr_apqns, u16 cardnr, u16 domain,
 	/* allocate 1k space for up to 256 apqns */
 	_apqns = kmalloc_array(256, sizeof(u32), GFP_KERNEL);
 	if (!_apqns) {
-		kfree(device_status);
+		kvfree(device_status);
 		return -ENOMEM;
 	}
 
@@ -1282,7 +1263,7 @@ int ep11_findcard2(u32 **apqns, u32 *nr_apqns, u16 cardnr, u16 domain,
 		rc = 0;
 	}
 
-	kfree(device_status);
+	kvfree(device_status);
 	return rc;
 }
 EXPORT_SYMBOL(ep11_findcard2);
