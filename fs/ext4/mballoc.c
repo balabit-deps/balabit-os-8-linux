@@ -2993,7 +2993,7 @@ ext4_mb_mark_diskspace_used(struct ext4_allocation_context *ac,
 	block = ext4_grp_offs_to_block(sb, &ac->ac_b_ex);
 
 	len = EXT4_C2B(sbi, ac->ac_b_ex.fe_len);
-	if (!ext4_data_block_valid(sbi, block, len)) {
+	if (!ext4_inode_block_valid(ac->ac_inode, block, len)) {
 		ext4_error(sb, "Allocating blocks %llu-%llu which overlap "
 			   "fs metadata", block, block+len);
 		/* File system mounted not to panic on error
@@ -3924,8 +3924,9 @@ ext4_mb_discard_group_preallocations(struct super_block *sb,
 	bitmap_bh = ext4_read_block_bitmap(sb, group);
 	if (IS_ERR(bitmap_bh)) {
 		err = PTR_ERR(bitmap_bh);
-		ext4_error(sb, "Error %d reading block bitmap for %u",
-			   err, group);
+		ext4_error_err(sb, -err,
+			       "Error %d reading block bitmap for %u",
+			       err, group);
 		return 0;
 	}
 
@@ -4092,16 +4093,16 @@ repeat:
 		err = ext4_mb_load_buddy_gfp(sb, group, &e4b,
 					     GFP_NOFS|__GFP_NOFAIL);
 		if (err) {
-			ext4_error(sb, "Error %d loading buddy information for %u",
-				   err, group);
+			ext4_error_err(sb, -err, "Error %d loading buddy information for %u",
+				       err, group);
 			continue;
 		}
 
 		bitmap_bh = ext4_read_block_bitmap(sb, group);
 		if (IS_ERR(bitmap_bh)) {
 			err = PTR_ERR(bitmap_bh);
-			ext4_error(sb, "Error %d reading block bitmap for %u",
-					err, group);
+			ext4_error_err(sb, -err, "Error %d reading block bitmap for %u",
+				       err, group);
 			ext4_mb_unload_buddy(&e4b);
 			continue;
 		}
@@ -4354,8 +4355,8 @@ ext4_mb_discard_lg_preallocations(struct super_block *sb,
 		err = ext4_mb_load_buddy_gfp(sb, group, &e4b,
 					     GFP_NOFS|__GFP_NOFAIL);
 		if (err) {
-			ext4_error(sb, "Error %d loading buddy information for %u",
-				   err, group);
+			ext4_error_err(sb, -err, "Error %d loading buddy information for %u",
+				       err, group);
 			continue;
 		}
 		ext4_lock_group(sb, group);
@@ -4758,7 +4759,7 @@ void ext4_free_blocks(handle_t *handle, struct inode *inode,
 
 	sbi = EXT4_SB(sb);
 	if (!(flags & EXT4_FREE_BLOCKS_VALIDATED) &&
-	    !ext4_data_block_valid(sbi, block, count)) {
+	    !ext4_inode_block_valid(inode, block, count)) {
 		ext4_error(sb, "Freeing blocks not in datazone - "
 			   "block = %llu, count = %lu", block, count);
 		goto error_return;

@@ -6287,6 +6287,20 @@ static void alc_fixup_thinkpad_acpi(struct hda_codec *codec,
 	hda_fixup_thinkpad_acpi(codec, fix, action);
 }
 
+/* Fixup for Lenovo Legion 15IMHg05 speaker output on headset removal. */
+static void alc287_fixup_legion_15imhg05_speakers(struct hda_codec *codec,
+						  const struct hda_fixup *fix,
+						  int action)
+{
+	struct alc_spec *spec = codec->spec;
+
+	switch (action) {
+	case HDA_FIXUP_ACT_PRE_PROBE:
+		spec->gen.suppress_auto_mute = 1;
+		break;
+	}
+}
+
 /* for alc295_fixup_hp_top_speakers */
 #include "hp_x360_helper.c"
 
@@ -6487,6 +6501,10 @@ enum {
 	ALC295_FIXUP_HP_OMEN,
 	ALC285_FIXUP_HP_SPECTRE_X360,
 	ALC255_FIXUP_ACER_HEADPHONE_AND_MIC,
+	ALC287_FIXUP_LEGION_15IMHG05_SPEAKERS,
+	ALC287_FIXUP_LEGION_15IMHG05_AUTOMUTE,
+	ALC287_FIXUP_YOGA7_14ITL_SPEAKERS,
+	ALC287_FIXUP_13S_GEN2_SPEAKERS
 };
 
 static const struct hda_fixup alc269_fixups[] = {
@@ -7995,6 +8013,113 @@ static const struct hda_fixup alc269_fixups[] = {
 		.chained = true,
 		.chain_id = ALC255_FIXUP_XIAOMI_HEADSET_MIC
 	},
+	[ALC287_FIXUP_LEGION_15IMHG05_SPEAKERS] = {
+		.type = HDA_FIXUP_VERBS,
+		//.v.verbs = legion_15imhg05_coefs,
+		.v.verbs = (const struct hda_verb[]) {
+			 // set left speaker Legion 7i.
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x24 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x41 },
+
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xc },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x1a },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x2 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+
+			 // set right speaker Legion 7i.
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x24 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x42 },
+
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xc },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x2a },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x2 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+			 {}
+		},
+		.chained = true,
+		.chain_id = ALC287_FIXUP_LEGION_15IMHG05_AUTOMUTE,
+	},
+	[ALC287_FIXUP_LEGION_15IMHG05_AUTOMUTE] = {
+		.type = HDA_FIXUP_FUNC,
+		.v.func = alc287_fixup_legion_15imhg05_speakers,
+		.chained = true,
+		.chain_id = ALC269_FIXUP_HEADSET_MODE,
+	},
+	[ALC287_FIXUP_YOGA7_14ITL_SPEAKERS] = {
+		.type = HDA_FIXUP_VERBS,
+		.v.verbs = (const struct hda_verb[]) {
+			 // set left speaker Yoga 7i.
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x24 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x41 },
+
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xc },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x1a },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x2 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+
+			 // set right speaker Yoga 7i.
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x24 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x46 },
+
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xc },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x2a },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+
+			 { 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x2 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			 { 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+			 {}
+		},
+		.chained = true,
+		.chain_id = ALC269_FIXUP_HEADSET_MODE,
+	},
+	[ALC287_FIXUP_13S_GEN2_SPEAKERS] = {
+		.type = HDA_FIXUP_VERBS,
+		.v.verbs = (const struct hda_verb[]) {
+			{ 0x20, AC_VERB_SET_COEF_INDEX, 0x24 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0x41 },
+			{ 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0x2 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+			{ 0x20, AC_VERB_SET_COEF_INDEX, 0x24 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0x42 },
+			{ 0x20, AC_VERB_SET_COEF_INDEX, 0x26 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0x2 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0x0 },
+			{ 0x20, AC_VERB_SET_PROC_COEF, 0xb020 },
+			{}
+		},
+		.chained = true,
+		.chain_id = ALC269_FIXUP_HEADSET_MODE,
+	},
 };
 
 static const struct snd_pci_quirk alc269_fixup_tbl[] = {
@@ -8351,6 +8476,10 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x17aa, 0x3176, "ThinkCentre Station", ALC283_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x17aa, 0x3178, "ThinkCentre Station", ALC283_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x17aa, 0x3818, "Lenovo C940", ALC298_FIXUP_LENOVO_SPK_VOLUME),
+	SND_PCI_QUIRK(0x17aa, 0x3813, "Legion 7i 15IMHG05", ALC287_FIXUP_LEGION_15IMHG05_SPEAKERS),
+	SND_PCI_QUIRK(0x17aa, 0x3852, "Lenovo Yoga 7 14ITL5", ALC287_FIXUP_YOGA7_14ITL_SPEAKERS),
+	SND_PCI_QUIRK(0x17aa, 0x3853, "Lenovo Yoga 7 15ITL5", ALC287_FIXUP_YOGA7_14ITL_SPEAKERS),
+	SND_PCI_QUIRK(0x17aa, 0x3819, "Lenovo 13s Gen2 ITL", ALC287_FIXUP_13S_GEN2_SPEAKERS),
 	SND_PCI_QUIRK(0x17aa, 0x3902, "Lenovo E50-80", ALC269_FIXUP_DMIC_THINKPAD_ACPI),
 	SND_PCI_QUIRK(0x17aa, 0x3977, "IdeaPad S210", ALC283_FIXUP_INT_MIC),
 	SND_PCI_QUIRK(0x17aa, 0x3978, "Lenovo B50-70", ALC269_FIXUP_DMIC_THINKPAD_ACPI),
@@ -9199,6 +9328,16 @@ static int patch_alc269(struct hda_codec *codec)
 
 	snd_hda_pick_fixup(codec, alc269_fixup_models,
 		       alc269_fixup_tbl, alc269_fixups);
+	/* FIXME: both TX300 and ROG Strix G17 have the same SSID, and
+	 * the quirk breaks the latter (bko#214101).
+	 * Clear the wrong entry.
+	 */
+	if (codec->fixup_id == ALC282_FIXUP_ASUS_TX300 &&
+	    codec->core.vendor_id == 0x10ec0294) {
+		codec_dbg(codec, "Clear wrong fixup for ASUS ROG Strix G17\n");
+		codec->fixup_id = HDA_FIXUP_ID_NOT_SET;
+	}
+
 	snd_hda_pick_pin_fixup(codec, alc269_pin_fixup_tbl, alc269_fixups, true);
 	snd_hda_pick_pin_fixup(codec, alc269_fallback_pin_fixup_tbl, alc269_fixups, false);
 	snd_hda_pick_fixup(codec, NULL,	alc269_fixup_vendor_tbl,
