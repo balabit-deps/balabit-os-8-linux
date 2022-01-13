@@ -42,6 +42,7 @@
 #include <rdma/ib_umem_odp.h>
 
 #include "uverbs.h"
+#include "ib_peer_mem.h"
 
 static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int dirty)
 {
@@ -193,17 +194,18 @@ unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 EXPORT_SYMBOL(ib_umem_find_best_pgsz);
 
 /**
- * ib_umem_get - Pin and DMA map userspace memory.
+ * __ib_umem_get - Pin and DMA map userspace memory.
  *
- * @udata: userspace context to pin memory for
+ * @device: IB device to connect UMEM
  * @addr: userspace virtual address to start at
  * @size: length of region to pin
  * @access: IB_ACCESS_xxx flags for memory being pinned
+ * @peer_mem_flags: IB_PEER_MEM_xxx flags for memory being used
  */
-struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
-			    size_t size, int access)
+struct ib_umem *__ib_umem_get(struct ib_device *device,
+			      unsigned long addr, size_t size, int access,
+			      unsigned long peer_mem_flags)
 {
-	struct ib_ucontext *context;
 	struct ib_umem *umem;
 	struct page **page_list;
 	unsigned long lock_limit;
@@ -214,14 +216,6 @@ struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
 	int ret;
 	struct scatterlist *sg;
 	unsigned int gup_flags = FOLL_WRITE;
-
-	if (!udata)
-		return ERR_PTR(-EIO);
-
-	context = container_of(udata, struct uverbs_attr_bundle, driver_udata)
-			  ->context;
-	if (!context)
-		return ERR_PTR(-EIO);
 
 	/*
 	 * If the combination of the addr and size requested for this memory
@@ -240,7 +234,7 @@ struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
 	umem = kzalloc(sizeof(*umem), GFP_KERNEL);
 	if (!umem)
 		return ERR_PTR(-ENOMEM);
-	umem->ibdev = context->device;
+	umem->ibdev      = device;
 	umem->length     = size;
 	umem->address    = addr;
 	umem->writable   = ib_access_writable(access);
@@ -295,7 +289,7 @@ struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
 		npages   -= ret;
 
 		sg = ib_umem_add_sg_table(sg, page_list, ret,
-			dma_get_max_seg_size(context->device->dma_device),
+			dma_get_max_seg_size(device->dma_device),
 			&umem->sg_nents);
 
 		up_read(&mm->mmap_sem);
@@ -303,10 +297,10 @@ struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
 
 	sg_mark_end(sg);
 
-	umem->nmap = ib_dma_map_sg(context->device,
-				  umem->sg_head.sgl,
-				  umem->sg_nents,
-				  DMA_BIDIRECTIONAL);
+	umem->nmap = ib_dma_map_sg(device,
+				   umem->sg_head.sgl,
+				   umem->sg_nents,
+				   DMA_BIDIRECTIONAL);
 
 	if (!umem->nmap) {
 		ret = -ENOMEM;
@@ -317,7 +311,25 @@ struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
 	goto out;
 
 umem_release:
-	__ib_umem_release(context->device, umem, 0);
+	__ib_umem_release(device, umem, 0);
+	/*
+	 * If the address belongs to peer memory client, then the first
+	 * call to get_user_pages will fail. In this case, try to get
+	 * these pages from the peers.
+	 */
+	//FIXME: this placement is horrible
+	if (ret < 0 && peer_mem_flags & IB_PEER_MEM_ALLOW) {
+		struct ib_umem *new_umem;
+
+		new_umem = ib_peer_umem_get(umem, ret, peer_mem_flags);
+		if (IS_ERR(new_umem)) {
+			ret = PTR_ERR(new_umem);
+			goto vma;
+		}
+		umem = new_umem;
+		ret = 0;
+		goto out;
+	}
 vma:
 	atomic64_sub(ib_umem_num_pages(umem), &mm->pinned_vm);
 out:
@@ -329,7 +341,22 @@ umem_kfree:
 	}
 	return ret ? ERR_PTR(ret) : umem;
 }
+
+struct ib_umem *ib_umem_get(struct ib_device *device, unsigned long addr,
+			    size_t size, int access)
+{
+	return __ib_umem_get(device, addr, size, access, 0);
+}
 EXPORT_SYMBOL(ib_umem_get);
+
+struct ib_umem *ib_umem_get_peer(struct ib_device *device, unsigned long addr,
+				 size_t size, int access,
+				 unsigned long peer_mem_flags)
+{
+	return __ib_umem_get(device, addr, size, access,
+			     IB_PEER_MEM_ALLOW | peer_mem_flags);
+}
+EXPORT_SYMBOL(ib_umem_get_peer);
 
 /**
  * ib_umem_release - release memory pinned with ib_umem_get
@@ -342,6 +369,8 @@ void ib_umem_release(struct ib_umem *umem)
 	if (umem->is_odp)
 		return ib_umem_odp_release(to_ib_umem_odp(umem));
 
+	if (umem->is_peer)
+		return ib_peer_umem_release(umem);
 	__ib_umem_release(umem->ibdev, umem, 1);
 
 	atomic64_sub(ib_umem_num_pages(umem), &umem->owning_mm->pinned_vm);

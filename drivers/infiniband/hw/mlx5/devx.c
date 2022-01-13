@@ -2143,7 +2143,7 @@ static int devx_umem_get(struct mlx5_ib_dev *dev, struct ib_ucontext *ucontext,
 	if (err)
 		return err;
 
-	obj->umem = ib_umem_get(&attrs->driver_udata, addr, size, access);
+	obj->umem = ib_umem_get_peer(&dev->ib_dev, addr, size, access, 0);
 	if (IS_ERR(obj->umem))
 		return PTR_ERR(obj->umem);
 
@@ -2190,6 +2190,8 @@ static void devx_umem_reg_cmd_build(struct mlx5_ib_dev *dev,
 	mlx5_ib_populate_pas(dev, obj->umem, obj->page_shift, mtt,
 			     (obj->umem->writable ? MLX5_IB_MTT_WRITE : 0) |
 			     MLX5_IB_MTT_READ);
+	if (obj->umem->is_peer && MLX5_CAP_GEN(dev->mdev, ats))
+		MLX5_SET(umem, umem, ats, 1);
 }
 
 static int UVERBS_HANDLER(MLX5_IB_METHOD_DEVX_UMEM_REG)(

@@ -48,10 +48,19 @@ struct ib_umem {
 	unsigned long		address;
 	u32 writable : 1;
 	u32 is_odp : 1;
+	/* Placing at the end of the bitfield list is ABI preserving on LE */
+	u32 is_peer : 1;
 	struct work_struct	work;
 	struct sg_table sg_head;
 	int             nmap;
 	unsigned int    sg_nents;
+	unsigned int    page_shift;
+};
+
+typedef void (*umem_invalidate_func_t)(struct ib_umem *umem, void *priv);
+enum ib_peer_mem_flags {
+	IB_PEER_MEM_ALLOW = 1 << 0,
+	IB_PEER_MEM_INVAL_SUPP = 1 << 1,
 };
 
 /* Returns the offset of the umem start relative to the first page. */
@@ -69,7 +78,7 @@ static inline size_t ib_umem_num_pages(struct ib_umem *umem)
 
 #ifdef CONFIG_INFINIBAND_USER_MEM
 
-struct ib_umem *ib_umem_get(struct ib_udata *udata, unsigned long addr,
+struct ib_umem *ib_umem_get(struct ib_device *device, unsigned long addr,
 			    size_t size, int access);
 void ib_umem_release(struct ib_umem *umem);
 int ib_umem_page_count(struct ib_umem *umem);
@@ -79,11 +88,19 @@ unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 				     unsigned long pgsz_bitmap,
 				     unsigned long virt);
 
+struct ib_umem *ib_umem_get_peer(struct ib_device *device, unsigned long addr,
+				 size_t size, int access,
+				 unsigned long peer_mem_flags);
+void ib_umem_activate_invalidation_notifier(struct ib_umem *umem,
+					    umem_invalidate_func_t func,
+					    void *cookie);
+void ib_umem_stop_invalidation_notifier(struct ib_umem *umem);
+
 #else /* CONFIG_INFINIBAND_USER_MEM */
 
 #include <linux/err.h>
 
-static inline struct ib_umem *ib_umem_get(struct ib_udata *udata,
+static inline struct ib_umem *ib_umem_get(struct ib_device *device,
 					  unsigned long addr, size_t size,
 					  int access)
 {
@@ -100,6 +117,23 @@ static inline unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 						   unsigned long virt)
 {
 	return 0;
+}
+
+static inline struct ib_umem *ib_umem_get_peer(struct ib_device *device,
+					       unsigned long addr, size_t size,
+					       int access,
+					       unsigned long peer_mem_flags)
+{
+	return ERR_PTR(-EINVAL);
+}
+
+static inline void ib_umem_activate_invalidation_notifier(
+	struct ib_umem *umem, umem_invalidate_func_t func, void *cookie)
+{
+}
+
+static inline void ib_umem_stop_invalidation_notifier(struct ib_umem *umem)
+{
 }
 
 #endif /* CONFIG_INFINIBAND_USER_MEM */
