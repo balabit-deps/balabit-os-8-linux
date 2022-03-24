@@ -1,3 +1,19 @@
+linux (5.4.0-107.121) focal; urgency=medium
+
+  * focal/linux: 5.4.0-107.121 -proposed tracker (LP: #1966275)
+
+  * CVE-2022-27666
+    - esp: Fix possible buffer overflow in ESP transformation
+
+  * CVE-2022-1055
+    - net: sched: fix use-after-free in tc_new_tfilter()
+
+  * Pick fixup from v5.4.176 upstream stable release to address cert
+    failure with clock jitter test in NUC7i3DNHE (LP: #1964204)
+    - Bluetooth: refactor malicious adv data check
+
+ -- Stefan Bader <stefan.bader@canonical.com>  Thu, 24 Mar 2022 16:48:48 +0100
+
 linux (5.4.0-105.119) focal; urgency=medium
 
   * CVE-2022-0847
