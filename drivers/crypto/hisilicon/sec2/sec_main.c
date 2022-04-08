@@ -21,11 +21,9 @@
 #define SEC_PF_PCI_DEVICE_ID		0xa255
 #define SEC_VF_PCI_DEVICE_ID		0xa256
 
-#define SEC_XTS_MIV_ENABLE_REG		0x301384
-#define SEC_XTS_MIV_ENABLE_MSK		0x7FFFFFFF
-#define SEC_XTS_MIV_DISABLE_MSK		0xFFFFFFFF
-#define SEC_BD_ERR_CHK_EN1		0xfffff7fd
-#define SEC_BD_ERR_CHK_EN2		0xffffbfff
+#define SEC_BD_ERR_CHK_EN0		0xEFFFFFFF
+#define SEC_BD_ERR_CHK_EN1		0x7ffff7fd
+#define SEC_BD_ERR_CHK_EN3		0xffffbfff
 
 #define SEC_SQE_SIZE			128
 #define SEC_SQ_SIZE			(SEC_SQE_SIZE * QM_Q_DEPTH)
@@ -46,17 +44,18 @@
 #define SEC_ECC_ADDR(err)			((err) >> 0)
 #define SEC_CORE_INT_DISABLE		0x0
 #define SEC_CORE_INT_ENABLE		0x1ff
+#define SEC_CORE_INT_CLEAR		0x1ff
+#define SEC_SAA_ENABLE			0x17f
 
-#define SEC_RAS_CE_REG			0x50
-#define SEC_RAS_FE_REG			0x54
-#define SEC_RAS_NFE_REG			0x58
+#define SEC_RAS_CE_REG			0x301050
+#define SEC_RAS_FE_REG			0x301054
+#define SEC_RAS_NFE_REG			0x301058
 #define SEC_RAS_CE_ENB_MSK		0x88
 #define SEC_RAS_FE_ENB_MSK		0x0
 #define SEC_RAS_NFE_ENB_MSK		0x177
 #define SEC_RAS_DISABLE			0x0
 #define SEC_MEM_START_INIT_REG		0x0100
 #define SEC_MEM_INIT_DONE_REG		0x0104
-#define SEC_QM_ABNORMAL_INT_MASK	0x100004
 
 #define SEC_CONTROL_REG			0x0200
 #define SEC_TRNG_EN_SHIFT		8
@@ -67,8 +66,10 @@
 
 #define SEC_INTERFACE_USER_CTRL0_REG	0x0220
 #define SEC_INTERFACE_USER_CTRL1_REG	0x0224
+#define SEC_SAA_EN_REG					0x0270
+#define SEC_BD_ERR_CHK_EN_REG0		0x0380
 #define SEC_BD_ERR_CHK_EN_REG1		0x0384
-#define SEC_BD_ERR_CHK_EN_REG2		0x038c
+#define SEC_BD_ERR_CHK_EN_REG3		0x038c
 
 #define SEC_USER0_SMMU_NORMAL		(BIT(23) | BIT(15))
 #define SEC_USER1_SMMU_NORMAL		(BIT(31) | BIT(23) | BIT(15) | BIT(7))
@@ -76,8 +77,8 @@
 
 #define SEC_DELAY_10_US			10
 #define SEC_POLL_TIMEOUT_US		1000
-#define SEC_VF_CNT_MASK			0xffffffc0
 #define SEC_DBGFS_VAL_MAX_LEN		20
+#define SEC_SINGLE_PORT_MAX_TRANS	0x2060
 
 #define SEC_ADDR(qm, offset) ((qm)->io_base + (offset) + \
 			     SEC_ENGINE_PF_CFG_OFF + SEC_ACC_COMMON_REG_OFF)
@@ -322,24 +323,24 @@ static int sec_engine_init(struct sec_dev *sec)
 	reg |= SEC_USER1_SMMU_NORMAL;
 	writel_relaxed(reg, SEC_ADDR(qm, SEC_INTERFACE_USER_CTRL1_REG));
 
+	writel(SEC_SINGLE_PORT_MAX_TRANS,
+	       qm->io_base + AM_CFG_SINGLE_PORT_MAX_TRANS);
+
+	writel(SEC_SAA_ENABLE, SEC_ADDR(qm, SEC_SAA_EN_REG));
+
+	/* Enable sm4 extra mode, as ctr/ecb */
+	writel_relaxed(SEC_BD_ERR_CHK_EN0,
+		       SEC_ADDR(qm, SEC_BD_ERR_CHK_EN_REG0));
+	/* Enable sm4 xts mode multiple iv */
 	writel_relaxed(SEC_BD_ERR_CHK_EN1,
 		       SEC_ADDR(qm, SEC_BD_ERR_CHK_EN_REG1));
-	writel_relaxed(SEC_BD_ERR_CHK_EN2,
-		       SEC_ADDR(qm, SEC_BD_ERR_CHK_EN_REG2));
-
-	/* enable clock gate control */
-	reg = readl_relaxed(SEC_ADDR(qm, SEC_CONTROL_REG));
-	reg |= SEC_CLK_GATE_ENABLE;
-	writel_relaxed(reg, SEC_ADDR(qm, SEC_CONTROL_REG));
+	writel_relaxed(SEC_BD_ERR_CHK_EN3,
+		       SEC_ADDR(qm, SEC_BD_ERR_CHK_EN_REG3));
 
 	/* config endian */
 	reg = readl_relaxed(SEC_ADDR(qm, SEC_CONTROL_REG));
 	reg |= sec_get_endian(sec);
 	writel_relaxed(reg, SEC_ADDR(qm, SEC_CONTROL_REG));
-
-	/* Enable sm4 xts mode multiple iv */
-	writel_relaxed(SEC_XTS_MIV_ENABLE_MSK,
-		       qm->io_base + SEC_XTS_MIV_ENABLE_REG);
 
 	return 0;
 }
@@ -384,9 +385,8 @@ static void sec_debug_regs_clear(struct hisi_qm *qm)
 	hisi_qm_debug_regs_clear(qm);
 }
 
-static void sec_hw_error_enable(struct sec_dev *sec)
+static void sec_hw_error_enable(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &sec->qm;
 	u32 val;
 
 	if (qm->ver == QM_HW_V1) {
@@ -395,10 +395,10 @@ static void sec_hw_error_enable(struct sec_dev *sec)
 		return;
 	}
 
-	val = readl(qm->io_base + SEC_CONTROL_REG);
+	val = readl(SEC_ADDR(qm, SEC_CONTROL_REG));
 
 	/* clear SEC hw error source if having */
-	writel(SEC_CORE_INT_DISABLE, qm->io_base + SEC_CORE_INT_SOURCE);
+	writel(SEC_CORE_INT_CLEAR, qm->io_base + SEC_CORE_INT_SOURCE);
 
 	/* enable SEC hw error interrupts */
 	writel(SEC_CORE_INT_ENABLE, qm->io_base + SEC_CORE_INT_MASK);
@@ -411,15 +411,14 @@ static void sec_hw_error_enable(struct sec_dev *sec)
 	/* enable SEC block master OOO when m-bit error occur */
 	val = val | SEC_AXI_SHUTDOWN_ENABLE;
 
-	writel(val, qm->io_base + SEC_CONTROL_REG);
+	writel(val, SEC_ADDR(qm, SEC_CONTROL_REG));
 }
 
-static void sec_hw_error_disable(struct sec_dev *sec)
+static void sec_hw_error_disable(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &sec->qm;
 	u32 val;
 
-	val = readl(qm->io_base + SEC_CONTROL_REG);
+	val = readl(SEC_ADDR(qm, SEC_CONTROL_REG));
 
 	/* disable RAS int */
 	writel(SEC_RAS_DISABLE, qm->io_base + SEC_RAS_CE_REG);
@@ -432,28 +431,7 @@ static void sec_hw_error_disable(struct sec_dev *sec)
 	/* disable SEC block master OOO when m-bit error occur */
 	val = val & SEC_AXI_SHUTDOWN_DISABLE;
 
-	writel(val, qm->io_base + SEC_CONTROL_REG);
-}
-
-static void sec_hw_error_init(struct sec_dev *sec)
-{
-	if (sec->qm.fun_type == QM_HW_VF)
-		return;
-
-	hisi_qm_hw_error_init(&sec->qm, QM_BASE_CE,
-			      QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT
-			      | QM_ACC_WB_NOT_READY_TIMEOUT, 0,
-			      QM_DB_RANDOM_INVALID);
-	sec_hw_error_enable(sec);
-}
-
-static void sec_hw_error_uninit(struct sec_dev *sec)
-{
-	if (sec->qm.fun_type == QM_HW_VF)
-		return;
-
-	sec_hw_error_disable(sec);
-	writel(GENMASK(12, 0), sec->qm.io_base + SEC_QM_ABNORMAL_INT_MASK);
+	writel(val, SEC_ADDR(qm, SEC_CONTROL_REG));
 }
 
 static u32 sec_current_qm_read(struct sec_debug_file *file)
@@ -695,6 +673,18 @@ static void sec_debugfs_exit(struct sec_dev *sec)
 	debugfs_remove_recursive(sec->qm.debug.debug_root);
 }
 
+static const struct hisi_qm_err_ini sec_err_ini = {
+	.hw_err_enable	= sec_hw_error_enable,
+	.hw_err_disable	= sec_hw_error_disable,
+	.err_info	= {
+		.ce		= QM_BASE_CE,
+		.nfe		= QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT |
+				  QM_ACC_WB_NOT_READY_TIMEOUT,
+		.fe		= 0,
+		.msi		= QM_DB_RANDOM_INVALID,
+	}
+};
+
 static int sec_pf_probe_init(struct sec_dev *sec)
 {
 	struct hisi_qm *qm = &sec->qm;
@@ -713,11 +703,13 @@ static int sec_pf_probe_init(struct sec_dev *sec)
 		return -EINVAL;
 	}
 
+	qm->err_ini = &sec_err_ini;
+
 	ret = sec_set_user_domain_and_cache(sec);
 	if (ret)
 		return ret;
 
-	sec_hw_error_init(sec);
+	hisi_qm_dev_err_init(qm);
 	sec_debug_regs_clear(qm);
 
 	return 0;
@@ -750,12 +742,30 @@ static void sec_qm_uninit(struct hisi_qm *qm)
 
 static int sec_probe_init(struct hisi_qm *qm, struct sec_dev *sec)
 {
+	int ret;
+
+	/*
+	 * WQ_HIGHPRI: SEC request must be low delayed,
+	 * so need a high priority workqueue.
+	 * WQ_UNBOUND: SEC task is likely with long
+	 * running CPU intensive workloads.
+	 */
+	qm->wq = alloc_workqueue("%s", WQ_HIGHPRI |
+		WQ_MEM_RECLAIM | WQ_UNBOUND, num_online_cpus(),
+		pci_name(qm->pdev));
+	if (!qm->wq) {
+		pci_err(qm->pdev, "fail to alloc workqueue\n");
+		return -ENOMEM;
+	}
+
 	if (qm->fun_type == QM_HW_PF) {
 		qm->qp_base = SEC_PF_DEF_Q_BASE;
 		qm->qp_num = pf_q_num;
 		qm->debug.curr_qm_qp_num = pf_q_num;
 
-		return sec_pf_probe_init(sec);
+		ret = sec_pf_probe_init(sec);
+		if (ret)
+			goto err_probe_uninit;
 	} else if (qm->fun_type == QM_HW_VF) {
 		/*
 		 * have no way to get qm configure in VM in v1 hardware,
@@ -768,18 +778,26 @@ static int sec_probe_init(struct hisi_qm *qm, struct sec_dev *sec)
 			qm->qp_num = SEC_QUEUE_NUM_V1 - SEC_PF_DEF_Q_NUM;
 		} else if (qm->ver == QM_HW_V2) {
 			/* v2 starts to support get vft by mailbox */
-			return hisi_qm_get_vft(qm, &qm->qp_base, &qm->qp_num);
+			ret = hisi_qm_get_vft(qm, &qm->qp_base, &qm->qp_num);
+			if (ret)
+				goto err_probe_uninit;
 		}
 	} else {
-		return -ENODEV;
+		ret = -ENODEV;
+		goto err_probe_uninit;
 	}
 
 	return 0;
+err_probe_uninit:
+	destroy_workqueue(qm->wq);
+	return ret;
 }
 
-static void sec_probe_uninit(struct sec_dev *sec)
+static void sec_probe_uninit(struct hisi_qm *qm)
 {
-	sec_hw_error_uninit(sec);
+	hisi_qm_dev_err_uninit(qm);
+
+	destroy_workqueue(qm->wq);
 }
 
 static int sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -836,7 +854,7 @@ err_remove_from_list:
 	hisi_qm_stop(qm);
 
 err_probe_uninit:
-	sec_probe_uninit(sec);
+	sec_probe_uninit(qm);
 
 err_qm_uninit:
 	sec_qm_uninit(qm);
@@ -967,7 +985,7 @@ static void sec_remove(struct pci_dev *pdev)
 	if (qm->fun_type == QM_HW_PF)
 		sec_debug_regs_clear(qm);
 
-	sec_probe_uninit(sec);
+	sec_probe_uninit(qm);
 
 	sec_qm_uninit(qm);
 }

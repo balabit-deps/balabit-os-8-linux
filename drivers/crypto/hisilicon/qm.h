@@ -40,6 +40,7 @@
 #define QM_AXI_M_CFG			0x1000ac
 #define AXI_M_CFG			0xffff
 #define QM_AXI_M_CFG_ENABLE		0x1000b0
+#define AM_CFG_SINGLE_PORT_MAX_TRANS	0x300014
 #define AXI_M_CFG_ENABLE		0xffffffff
 #define QM_PEH_AXUSER_CFG		0x1000cc
 #define QM_PEH_AXUSER_CFG_ENABLE	0x1000d0
@@ -125,6 +126,21 @@ struct hisi_qm_status {
 	unsigned long flags;
 };
 
+struct hisi_qm;
+
+struct hisi_qm_err_info {
+	u32 ce;
+	u32 nfe;
+	u32 fe;
+	u32 msi;
+};
+
+struct hisi_qm_err_ini {
+	void (*hw_err_enable)(struct hisi_qm *qm);
+	void (*hw_err_disable)(struct hisi_qm *qm);
+	struct hisi_qm_err_info err_info;
+};
+
 struct hisi_qm {
 	enum qm_hw_ver ver;
 	enum qm_fun_type fun_type;
@@ -148,6 +164,7 @@ struct hisi_qm {
 	dma_addr_t aeqe_dma;
 
 	struct hisi_qm_status status;
+	const struct hisi_qm_err_ini *err_ini;
 
 	rwlock_t qps_lock;
 	unsigned long *qp_bitmap;
@@ -162,6 +179,8 @@ struct hisi_qm {
 	u32 error_mask;
 	u32 msi_mask;
 
+	struct workqueue_struct *wq;
+	struct work_struct work;
 	bool use_dma_api;
 };
 
@@ -192,8 +211,6 @@ struct hisi_qp {
 	struct hisi_qp_ops *hw_ops;
 	void *qp_ctx;
 	void (*req_cb)(struct hisi_qp *qp, void *data);
-	struct work_struct work;
-	struct workqueue_struct *wq;
 
 	struct hisi_qm *qm;
 };
@@ -211,11 +228,11 @@ int hisi_qm_get_free_qp_num(struct hisi_qm *qm);
 int hisi_qm_get_vft(struct hisi_qm *qm, u32 *base, u32 *number);
 int hisi_qm_set_vft(struct hisi_qm *qm, u32 fun_num, u32 base, u32 number);
 int hisi_qm_debug_init(struct hisi_qm *qm);
-void hisi_qm_hw_error_init(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
-			   u32 msi);
 pci_ers_result_t hisi_qm_hw_error_handle(struct hisi_qm *qm);
 enum qm_hw_ver hisi_qm_get_hw_version(struct pci_dev *pdev);
 void hisi_qm_debug_regs_clear(struct hisi_qm *qm);
+void hisi_qm_dev_err_init(struct hisi_qm *qm);
+void hisi_qm_dev_err_uninit(struct hisi_qm *qm);
 
 struct hisi_acc_sgl_pool;
 struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,
