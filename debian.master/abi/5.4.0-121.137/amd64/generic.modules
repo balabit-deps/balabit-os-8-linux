@@ -691,7 +691,6 @@ cdns-csi2tx
 cdns-pltfrm
 cdns3
 cdns3-pci-wrap
-cec-gpio
 ceph
 cfag12864b
 cfag12864bfb
@@ -3278,7 +3277,6 @@ pata_sil680
 pata_sl82c105
 pata_triflex
 pata_via
-pblk
 pc300too
 pc87360
 pc87413_wdt
