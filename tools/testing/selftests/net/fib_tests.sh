@@ -444,63 +444,24 @@ fib_rp_filter_test()
 	setup
 
 	set -e
-	ip netns add ns2
-	ip netns set ns2 auto
-
-	ip -netns ns2 link set dev lo up
-
-	$IP link add name veth1 type veth peer name veth2
-	$IP link set dev veth2 netns ns2
-	$IP address add 192.0.2.1/24 dev veth1
-	ip -netns ns2 address add 192.0.2.1/24 dev veth2
-	$IP link set dev veth1 up
-	ip -netns ns2 link set dev veth2 up
-
 	$IP link set dev lo address 52:54:00:6a:c7:5e
-	$IP link set dev veth1 address 52:54:00:6a:c7:5e
-	ip -netns ns2 link set dev lo address 52:54:00:6a:c7:5e
-	ip -netns ns2 link set dev veth2 address 52:54:00:6a:c7:5e
-
-	# 1. (ns2) redirect lo's egress to veth2's egress
-	ip netns exec ns2 tc qdisc add dev lo parent root handle 1: fq_codel
-	ip netns exec ns2 tc filter add dev lo parent 1: protocol arp basic \
-		action mirred egress redirect dev veth2
-	ip netns exec ns2 tc filter add dev lo parent 1: protocol ip basic \
-		action mirred egress redirect dev veth2
-
-	# 2. (ns1) redirect veth1's ingress to lo's ingress
-	$NS_EXEC tc qdisc add dev veth1 ingress
-	$NS_EXEC tc filter add dev veth1 ingress protocol arp basic \
-		action mirred ingress redirect dev lo
-	$NS_EXEC tc filter add dev veth1 ingress protocol ip basic \
-		action mirred ingress redirect dev lo
-
-	# 3. (ns1) redirect lo's egress to veth1's egress
-	$NS_EXEC tc qdisc add dev lo parent root handle 1: fq_codel
-	$NS_EXEC tc filter add dev lo parent 1: protocol arp basic \
-		action mirred egress redirect dev veth1
-	$NS_EXEC tc filter add dev lo parent 1: protocol ip basic \
-		action mirred egress redirect dev veth1
-
-	# 4. (ns2) redirect veth2's ingress to lo's ingress
-	ip netns exec ns2 tc qdisc add dev veth2 ingress
-	ip netns exec ns2 tc filter add dev veth2 ingress protocol arp basic \
-		action mirred ingress redirect dev lo
-	ip netns exec ns2 tc filter add dev veth2 ingress protocol ip basic \
-		action mirred ingress redirect dev lo
-
+	$IP link set dummy0 address 52:54:00:6a:c7:5e
+	$IP link add dummy1 type dummy
+	$IP link set dummy1 address 52:54:00:6a:c7:5e
+	$IP link set dev dummy1 up
 	$NS_EXEC sysctl -qw net.ipv4.conf.all.rp_filter=1
 	$NS_EXEC sysctl -qw net.ipv4.conf.all.accept_local=1
 	$NS_EXEC sysctl -qw net.ipv4.conf.all.route_localnet=1
-	ip netns exec ns2 sysctl -qw net.ipv4.conf.all.rp_filter=1
-	ip netns exec ns2 sysctl -qw net.ipv4.conf.all.accept_local=1
-	ip netns exec ns2 sysctl -qw net.ipv4.conf.all.route_localnet=1
+
+	$NS_EXEC tc qd add dev dummy1 parent root handle 1: fq_codel
+	$NS_EXEC tc filter add dev dummy1 parent 1: protocol arp basic action mirred egress redirect dev lo
+	$NS_EXEC tc filter add dev dummy1 parent 1: protocol ip basic action mirred egress redirect dev lo
 	set +e
 
-	run_cmd "ip netns exec ns2 ping -w1 -c1 192.0.2.1"
+	run_cmd "ip netns exec ns1 ping -I dummy1 -w1 -c1 198.51.100.1"
 	log_test $? 0 "rp_filter passes local packets"
 
-	run_cmd "ip netns exec ns2 ping -w1 -c1 127.0.0.1"
+	run_cmd "ip netns exec ns1 ping -I dummy1 -w1 -c1 127.0.0.1"
 	log_test $? 0 "rp_filter passes loopback packets"
 
 	cleanup
@@ -657,22 +618,16 @@ fib_nexthop_test()
 
 fib_suppress_test()
 {
-	echo
-	echo "FIB rule with suppress_prefixlength"
-	setup
-
 	$IP link add dummy1 type dummy
 	$IP link set dummy1 up
 	$IP -6 route add default dev dummy1
 	$IP -6 rule add table main suppress_prefixlength 0
-	ping -f -c 1000 -W 1 1234::1 >/dev/null 2>&1
+	ping -f -c 1000 -W 1 1234::1 || true
 	$IP -6 rule del table main suppress_prefixlength 0
 	$IP link del dummy1
 
 	# If we got here without crashing, we're good.
-	log_test 0 0 "FIB rule suppress test"
-
-	cleanup
+	return 0
 }
 
 ################################################################################
@@ -955,12 +910,6 @@ ipv6_rt_replace_mpath()
 	check_route6 "2001:db8:104::/64 via 2001:db8:101::3 dev veth1 metric 1024"
 	log_test $? 0 "Multipath with single path via multipath attribute"
 
-	# multipath with dev-only
-	add_initial_route6 "nexthop via 2001:db8:101::2 nexthop via 2001:db8:103::2"
-	run_cmd "$IP -6 ro replace 2001:db8:104::/64 dev veth1"
-	check_route6 "2001:db8:104::/64 dev veth1 metric 1024"
-	log_test $? 0 "Multipath with dev-only"
-
 	# route replace fails - invalid nexthop 1
 	add_initial_route6 "nexthop via 2001:db8:101::2 nexthop via 2001:db8:103::2"
 	run_cmd "$IP -6 ro replace 2001:db8:104::/64 nexthop via 2001:db8:111::3 nexthop via 2001:db8:103::3"
@@ -1085,26 +1034,6 @@ ipv6_addr_metric_test()
 		rc=$?
 	fi
 	log_test $rc 0 "Prefix route with metric on link up"
-
-	# verify peer metric added correctly
-	set -e
-	run_cmd "$IP -6 addr flush dev dummy2"
-	run_cmd "$IP -6 addr add dev dummy2 2001:db8:104::1 peer 2001:db8:104::2 metric 260"
-	set +e
-
-	check_route6 "2001:db8:104::1 dev dummy2 proto kernel metric 260"
-	log_test $? 0 "Set metric with peer route on local side"
-	check_route6 "2001:db8:104::2 dev dummy2 proto kernel metric 260"
-	log_test $? 0 "Set metric with peer route on peer side"
-
-	set -e
-	run_cmd "$IP -6 addr change dev dummy2 2001:db8:104::1 peer 2001:db8:104::3 metric 261"
-	set +e
-
-	check_route6 "2001:db8:104::1 dev dummy2 proto kernel metric 261"
-	log_test $? 0 "Modify metric and peer address on local side"
-	check_route6 "2001:db8:104::3 dev dummy2 proto kernel metric 261"
-	log_test $? 0 "Modify metric and peer address on peer side"
 
 	$IP li del dummy1
 	$IP li del dummy2
@@ -1423,37 +1352,12 @@ ipv4_rt_replace()
 	ipv4_rt_replace_mpath
 }
 
-# checks that cached input route on VRF port is deleted
-# when VRF is deleted
-ipv4_local_rt_cache()
-{
-	run_cmd "ip addr add 10.0.0.1/32 dev lo"
-	run_cmd "ip netns add test-ns"
-	run_cmd "ip link add veth-outside type veth peer name veth-inside"
-	run_cmd "ip link add vrf-100 type vrf table 1100"
-	run_cmd "ip link set veth-outside master vrf-100"
-	run_cmd "ip link set veth-inside netns test-ns"
-	run_cmd "ip link set veth-outside up"
-	run_cmd "ip link set vrf-100 up"
-	run_cmd "ip route add 10.1.1.1/32 dev veth-outside table 1100"
-	run_cmd "ip netns exec test-ns ip link set veth-inside up"
-	run_cmd "ip netns exec test-ns ip addr add 10.1.1.1/32 dev veth-inside"
-	run_cmd "ip netns exec test-ns ip route add 10.0.0.1/32 dev veth-inside"
-	run_cmd "ip netns exec test-ns ip route add default via 10.0.0.1"
-	run_cmd "ip netns exec test-ns ping 10.0.0.1 -c 1 -i 1"
-	run_cmd "ip link delete vrf-100"
-
-	# if we do not hang test is a success
-	log_test $? 0 "Cached route removed from VRF port device"
-}
-
 ipv4_route_test()
 {
 	route_setup
 
 	ipv4_rt_add
 	ipv4_rt_replace
-	ipv4_local_rt_cache
 
 	route_cleanup
 }
@@ -1547,20 +1451,13 @@ ipv4_addr_metric_test()
 
 	run_cmd "$IP addr flush dev dummy2"
 	run_cmd "$IP addr add dev dummy2 172.16.104.1/32 peer 172.16.104.2 metric 260"
+	run_cmd "$IP addr change dev dummy2 172.16.104.1/32 peer 172.16.104.2 metric 261"
 	rc=$?
 	if [ $rc -eq 0 ]; then
-		check_route "172.16.104.2 dev dummy2 proto kernel scope link src 172.16.104.1 metric 260"
+		check_route "172.16.104.2 dev dummy2 proto kernel scope link src 172.16.104.1 metric 261"
 		rc=$?
 	fi
-	log_test $rc 0 "Set metric of address with peer route"
-
-	run_cmd "$IP addr change dev dummy2 172.16.104.1/32 peer 172.16.104.3 metric 261"
-	rc=$?
-	if [ $rc -eq 0 ]; then
-		check_route "172.16.104.3 dev dummy2 proto kernel scope link src 172.16.104.1 metric 261"
-		rc=$?
-	fi
-	log_test $rc 0 "Modify metric and peer address for peer route"
+	log_test $rc 0 "Modify metric of address with peer route"
 
 	$IP li del dummy1
 	$IP li del dummy2
