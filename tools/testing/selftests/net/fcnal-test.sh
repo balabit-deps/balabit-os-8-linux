@@ -3506,10 +3506,13 @@ elif [ "$TESTS" = "ipv6" ]; then
 	TESTS="$TESTS_IPV6"
 fi
 
-which nettest >/dev/null
-if [ $? -ne 0 ]; then
-	echo "'nettest' command not found; skipping tests"
-	exit 0
+# nettest can be run from PATH or from same directory as this selftest
+if ! which nettest >/dev/null; then
+	PATH=$PWD:$PATH
+	if ! which nettest >/dev/null; then
+		echo "'nettest' command not found; skipping tests"
+		exit 0
+	fi
 fi
 
 declare -i nfail=0
@@ -3546,3 +3549,11 @@ cleanup 2>/dev/null
 
 printf "\nTests passed: %3d\n" ${nsuccess}
 printf "Tests failed: %3d\n"   ${nfail}
+
+if [ $nfail -ne 0 ]; then
+	exit 1 # KSFT_FAIL
+elif [ $nsuccess -eq 0 ]; then
+	exit $ksft_skip
+fi
+
+exit 0 # KSFT_PASS
