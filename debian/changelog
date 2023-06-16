@@ -1,3 +1,16 @@
+linux (5.4.0-153.170) focal; urgency=medium
+
+  * focal/linux: 5.4.0-153.170 -proposed tracker (LP: #2024108)
+
+  * cls_flower: off-by-one in fl_set_geneve_opt (LP: #2023577)
+    - net/sched: flower: fix possible OOB write in fl_set_geneve_opt()
+
+  * Some INVLPG implementations can leave Global translations unflushed when
+    PCIDs are enabled (LP: #2023220)
+    - x86/mm: Avoid incomplete Global INVLPG flushes
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Fri, 16 Jun 2023 10:20:20 -0300
+
 linux (5.4.0-152.169) focal; urgency=medium
 
   * focal/linux: 5.4.0-152.169 -proposed tracker (LP: #2023070)
