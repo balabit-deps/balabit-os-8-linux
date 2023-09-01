@@ -907,7 +907,12 @@ CONFIG_SERIAL_ALTERA_UART_MAXPORTS              policy<{'amd64': '4', 'arm64': '
 CONFIG_SERIAL_ALTERA_UART_BAUDRATE              policy<{'amd64': '115200', 'arm64': '115200', 'armhf': '115200', 'i386': '115200', 'ppc64el': '115200', }>
 
 # Menu: Device Drivers >> Character devices >> Serial drivers >> SuperH SCI(F) serial port support
-CONFIG_SERIAL_SH_SCI                            policy<{'arm64': 'm', 'armhf': 'm'}>
+CONFIG_SERIAL_SH_SCI                            policy<{'arm64': 'y', 'armhf': 'y'}>
+CONFIG_SERIAL_SH_SCI                            note<'LP: #2022361'>
+CONFIG_SERIAL_SH_SCI_CONSOLE                    policy<{'arm64': 'y', 'armhf': 'y'}>
+CONFIG_SERIAL_SH_SCI_CONSOLE                    note<'LP: #2022361'>
+CONFIG_SERIAL_SH_SCI_EARLYCON                   policy<{'arm64': 'y', 'armhf': 'y'}>
+CONFIG_SERIAL_SH_SCI_EARLYCON                   note<'LP: #2022361'>
 CONFIG_SERIAL_SH_SCI_NR_UARTS                   policy<{'arm64': '2', 'armhf': '2'}>
 CONFIG_SERIAL_SH_SCI_DMA                        policy<{'arm64': 'y', 'armhf': 'y'}>
 
@@ -11301,8 +11306,6 @@ CONFIG_BRIDGE_VLAN_FILTERING                    policy<{'amd64': 'y', 'arm64': '
 CONFIG_VLAN_8021Q                               policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'm'}>
 CONFIG_VLAN_8021Q_GVRP                          policy<{'amd64': 'y', 'arm64': 'y', 'armhf': 'y', 'i386': 'y', 'ppc64el': 'y', 's390x': 'y'}>
 CONFIG_VLAN_8021Q_MVRP                          policy<{'amd64': 'y', 'arm64': 'y', 'armhf': 'y', 'i386': 'y', 'ppc64el': 'y', 's390x': 'y'}>
-CONFIG_DECNET                                   policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'n'}>
-CONFIG_DECNET_ROUTER                            policy<{'amd64': 'n', 'arm64': 'n', 'armhf': 'n', 'i386': 'n', 'ppc64el': 'n', }>
 CONFIG_LLC2                                     policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'n'}>
 CONFIG_ATALK                                    policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'n'}>
 CONFIG_X25                                      policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'n'}>
@@ -11563,9 +11566,6 @@ CONFIG_NF_DUP_NETDEV                            policy<{'amd64': 'm', 'arm64': '
 CONFIG_NFT_DUP_NETDEV                           policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'm'}>
 CONFIG_NFT_FWD_NETDEV                           policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'm'}>
 CONFIG_NFT_FIB_NETDEV                           policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'm'}>
-
-# Menu: Networking support >> Networking options >> Network packet filtering framework (Netfilter) >> DECnet: Netfilter Configuration
-CONFIG_DECNET_NF_GRABULATOR                     policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', }>
 
 # Menu: Networking support >> Networking options >> Network packet filtering framework (Netfilter) >> Ethernet Bridge nf_tables support
 CONFIG_NF_TABLES_BRIDGE                         policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm', 's390x': 'm'}>

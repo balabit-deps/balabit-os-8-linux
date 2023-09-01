@@ -991,7 +991,6 @@ dccp_ipv4
 dccp_ipv6
 ddbridge
 de2104x
-decnet
 defxx
 denali
 denali_dt
@@ -1067,7 +1066,6 @@ dmfe
 dmi-sysfs
 dmm32at
 dmx3191d
-dn_rtmsg
 dnet
 dp83640
 dp83822
@@ -4489,7 +4487,6 @@ sfc-falcon
 sfp
 sgi_w1
 sgp30
-sh-sci
 sh_eth
 sh_mmcif
 sh_mobile_lcdcfb
