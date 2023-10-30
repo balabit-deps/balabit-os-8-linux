@@ -1,3 +1,18 @@
+linux (5.4.0-167.184) focal; urgency=medium
+
+  * focal/linux: 5.4.0-167.184 -proposed tracker (LP: #2041988)
+
+  * CVE-2023-45871
+    - igb: set max size RX buffer when store bad packet is enabled
+
+  * CVE-2023-31085
+    - ubi: Refuse attaching if mtd's erasesize is 0
+
+  * Packaging resync (LP: #1786013)
+    - [Packaging] update helper scripts
+
+ -- Thadeu Lima de Souza Cascardo <cascardo@canonical.com>  Mon, 30 Oct 2023 17:22:16 -0300
+
 linux (5.4.0-166.183) focal; urgency=medium
 
   * focal/linux: 5.4.0-166.183 -proposed tracker (LP: #2038010)
