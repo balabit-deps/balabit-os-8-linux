@@ -2423,8 +2423,6 @@ lis3lv02d_spi
 lkkbd
 llc
 llc2
-llcc-sdm845
-llcc-slice
 lm25066
 lm3533-als
 lm3533-core
@@ -5027,7 +5025,6 @@ sur40
 surface3_spi
 svgalib
 switchtec
-sx8
 sx8654
 sx9500
 sy8106a-regulator
