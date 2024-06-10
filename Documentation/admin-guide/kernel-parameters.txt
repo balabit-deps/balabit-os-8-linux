@@ -2748,6 +2748,7 @@
 					       nospectre_v2 [X86,PPC,S390,ARM64]
 					       retbleed=off [X86]
 					       spec_store_bypass_disable=off [X86,PPC]
+					       spectre_bhi=off [X86]
 					       spectre_v2_user=off [X86]
 					       srbds=off [X86,INTEL]
 					       ssbd=force-off [ARM64]
@@ -4604,6 +4605,18 @@
 
 	sonypi.*=	[HW] Sony Programmable I/O Control Device driver
 			See Documentation/admin-guide/laptops/sonypi.rst
+
+	spectre_bhi=	[X86] Control mitigation of Branch History Injection
+			(BHI) vulnerability.  This setting affects the
+			deployment of the HW BHI control and the SW BHB
+			clearing sequence.
+
+			on   - (default) Enable the HW or SW mitigation
+			       as needed.
+			off  - Disable the mitigation.
+			auto - Enable the HW mitigation if needed, but
+			       *don't* enable the SW mitigation except
+			       for KVM.  The system may be vulnerable.
 
 	spectre_v2=	[X86] Control mitigation of Spectre variant 2
 			(indirect branch speculation) vulnerability.
