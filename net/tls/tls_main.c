@@ -608,6 +608,7 @@ static struct tls_context *create_ctx(struct sock *sk)
 	mutex_init(&ctx->tx_lock);
 	rcu_assign_pointer(icsk->icsk_ulp_data, ctx);
 	ctx->sk_proto = sk->sk_prot;
+	ctx->sk = sk;
 	return ctx;
 }
 
@@ -902,11 +903,17 @@ static struct tcp_ulp_ops tcp_tls_ulp_ops __read_mostly = {
 
 static int __init tls_register(void)
 {
+	int err;
+
 	tls_sw_proto_ops = inet_stream_ops;
 	tls_sw_proto_ops.splice_read = tls_sw_splice_read;
 	tls_sw_proto_ops.sendpage_locked   = tls_sw_sendpage_locked,
 
-	tls_device_init();
+	err = tls_device_init();
+	if (err) {
+		return err;
+	}
+
 	tcp_register_ulp(&tcp_tls_ulp_ops);
 
 	return 0;

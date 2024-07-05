@@ -66,6 +66,10 @@ struct sk_skb_cb {
 #define SK_SKB_CB_PRIV_LEN 20
 	unsigned char data[SK_SKB_CB_PRIV_LEN];
 	struct _strp_msg strp;
+	struct tls_msg {
+		u8 control;
+		u8 decrypted;
+	} tls;
 };
 
 static inline struct strp_msg *strp_msg(struct sk_buff *skb)
