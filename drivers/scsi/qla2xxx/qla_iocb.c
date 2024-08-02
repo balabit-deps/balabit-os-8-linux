@@ -2520,7 +2520,8 @@ static void qla2x00_els_dcmd_sp_free(srb_t *sp)
 {
 	struct srb_iocb *elsio = &sp->u.iocb_cmd;
 
-	kfree(sp->fcport);
+	if (sp->fcport)
+		kfree(sp->fcport);
 
 	if (elsio->u.els_logo.els_logo_pyld)
 		dma_free_coherent(&sp->vha->hw->pdev->dev, DMA_POOL_SIZE,
@@ -2630,6 +2631,7 @@ qla24xx_els_dcmd_iocb(scsi_qla_host_t *vha, int els_opcode,
 
 	if (!elsio->u.els_logo.els_logo_pyld) {
 		sp->free(sp);
+		kfree(sp->fcport);
 		return QLA_FUNCTION_FAILED;
 	}
 

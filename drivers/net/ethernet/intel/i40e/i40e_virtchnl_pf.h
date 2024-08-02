@@ -103,7 +103,6 @@ struct i40e_vf {
 	bool link_forced;
 	bool link_up;		/* only valid if VF link is forced */
 	bool spoofchk;
-	u16 num_mac;
 	u16 num_vlan;
 
 	/* ADq related variables */

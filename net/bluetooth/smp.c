@@ -3398,11 +3398,15 @@ static ssize_t le_min_key_size_write(struct file *file,
 
 	sscanf(buf, "%hhu", &key_size);
 
+	hci_dev_lock(hdev);
 	if (key_size > hdev->le_max_key_size ||
-	    key_size < SMP_MIN_ENC_KEY_SIZE)
+	    key_size < SMP_MIN_ENC_KEY_SIZE) {
+		hci_dev_unlock(hdev);
 		return -EINVAL;
+	}
 
 	hdev->le_min_key_size = key_size;
+	hci_dev_unlock(hdev);
 
 	return count;
 }
@@ -3442,11 +3446,15 @@ static ssize_t le_max_key_size_write(struct file *file,
 
 	sscanf(buf, "%hhu", &key_size);
 
+	hci_dev_lock(hdev);
 	if (key_size > SMP_MAX_ENC_KEY_SIZE ||
-	    key_size < hdev->le_min_key_size)
+	    key_size < hdev->le_min_key_size) {
+		hci_dev_unlock(hdev);
 		return -EINVAL;
+	}
 
 	hdev->le_max_key_size = key_size;
+	hci_dev_unlock(hdev);
 
 	return count;
 }

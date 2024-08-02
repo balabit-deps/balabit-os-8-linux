@@ -662,6 +662,8 @@ restart:
 		error = gfs2_make_fs_ro(sdp);
 		if (error)
 			gfs2_io_error(sdp);
+	} else {
+		gfs2_quota_cleanup(sdp);
 	}
 	/*  At this point, we're through modifying the disk  */
 
