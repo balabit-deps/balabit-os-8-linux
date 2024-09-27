@@ -432,6 +432,20 @@ enum {
 	VMW_IRQTHREAD_MAX
 };
 
+/**
+ * enum vmw_sm_type - Graphics context capability supported by device.
+ * @VMW_SM_LEGACY: Pre DX context.
+ * @VMW_SM_4: Context support upto SM4.
+ * @VMW_SM_4_1: Context support upto SM4_1.
+ * @VMW_SM_MAX: Should be the last.
+ */
+enum vmw_sm_type {
+	VMW_SM_LEGACY = 0,
+	VMW_SM_4,
+	VMW_SM_4_1,
+	VMW_SM_MAX
+};
+
 struct vmw_private {
 	struct ttm_bo_device bdev;
 
@@ -465,9 +479,9 @@ struct vmw_private {
 	bool has_mob;
 	spinlock_t hw_lock;
 	spinlock_t cap_lock;
-	bool has_dx;
 	bool assume_16bpp;
-	bool has_sm4_1;
+
+	enum vmw_sm_type sm_type;
 
 	/*
 	 * VGA registers.
@@ -649,6 +663,28 @@ static inline uint32_t vmw_read(struct vmw_private *dev_priv,
 	spin_unlock(&dev_priv->hw_lock);
 
 	return val;
+}
+
+/**
+ * has_sm4_context - Does the device support SM4 context.
+ * @dev_priv: Device private.
+ *
+ * Return: Bool value if device support SM4 context or not.
+ */
+static inline bool has_sm4_context(const struct vmw_private *dev_priv)
+{
+	return (dev_priv->sm_type >= VMW_SM_4);
+}
+
+/**
+ * has_sm4_1_context - Does the device support SM4_1 context.
+ * @dev_priv: Device private.
+ *
+ * Return: Bool value if device support SM4_1 context or not.
+ */
+static inline bool has_sm4_1_context(const struct vmw_private *dev_priv)
+{
+	return (dev_priv->sm_type >= VMW_SM_4_1);
 }
 
 extern void vmw_svga_enable(struct vmw_private *dev_priv);
@@ -1486,4 +1522,15 @@ static inline void vmw_mmio_write(u32 value, u32 *addr)
 {
 	WRITE_ONCE(*addr, value);
 }
+
+static inline bool vmw_shadertype_is_valid(enum vmw_sm_type shader_model,
+					   u32 shader_type)
+{
+	SVGA3dShaderType max_allowed = SVGA3D_SHADERTYPE_PREDX_MAX;
+
+	if (shader_model >= VMW_SM_4)
+		max_allowed = SVGA3D_SHADERTYPE_DX10_MAX;
+	return shader_type >= SVGA3D_SHADERTYPE_MIN && shader_type < max_allowed;
+}
+
 #endif

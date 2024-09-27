@@ -695,10 +695,6 @@ static int at24_probe(struct i2c_client *client)
 	nvmem_config.word_size = 1;
 	nvmem_config.size = byte_len;
 
-	at24->nvmem = devm_nvmem_register(dev, &nvmem_config);
-	if (IS_ERR(at24->nvmem))
-		return PTR_ERR(at24->nvmem);
-
 	i2c_set_clientdata(client, at24);
 
 	/* enable runtime pm */
@@ -710,11 +706,18 @@ static int at24_probe(struct i2c_client *client)
 	 * chip is functional.
 	 */
 	err = at24_read(at24, 0, &test_byte, 1);
-	pm_runtime_idle(dev);
 	if (err) {
 		pm_runtime_disable(dev);
 		return -ENODEV;
 	}
+
+	at24->nvmem = devm_nvmem_register(dev, &nvmem_config);
+	if (IS_ERR(at24->nvmem)) {
+		pm_runtime_disable(dev);
+		return PTR_ERR(at24->nvmem);
+	}
+
+	pm_runtime_idle(dev);
 
 	dev_info(dev, "%u byte %s EEPROM, %s, %u bytes/write\n",
 		 byte_len, client->name,
