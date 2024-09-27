@@ -1,3 +1,25 @@
+linux (5.4.0-198.218) focal; urgency=medium
+
+  * focal/linux: 5.4.0-198.218 -proposed tracker (LP: #2082232)
+
+  * Packaging resync (LP: #1786013)
+    - [Packaging] debian.master/dkms-versions -- update from kernel-versions
+      (main/s2024.09.02)
+
+  * CVE-2024-45016
+    - netem: fix return value if duplicate enqueue fails
+
+  * CVE-2024-38630
+    - watchdog: cpu5wdt.c: Fix use-after-free bug caused by cpu5wdt_trigger
+
+  * CVE-2024-27397
+    - netfilter: nf_tables: use timestamp to check for set element timeout
+
+  * CVE-2024-26960
+    - mm: swap: fix race between free_swap_and_cache() and swapoff()
+
+ -- Manuel Diewald <manuel.diewald@canonical.com>  Fri, 27 Sep 2024 18:59:47 +0200
+
 linux (5.4.0-196.216) focal; urgency=medium
 
   * focal/linux: 5.4.0-196.216 -proposed tracker (LP: #2078205)
