@@ -668,10 +668,6 @@ lpfc_vport_delete(struct fc_vport *fc_vport)
 		ns_ndlp_referenced = true;
 	}
 
-	/* Remove FC host and then SCSI host with the vport */
-	fc_remove_host(shost);
-	scsi_remove_host(shost);
-
 	ndlp = lpfc_findnode_did(phba->pport, Fabric_DID);
 
 	/* In case of driver unload, we shall not perform fabric logo as the
@@ -782,6 +778,10 @@ skip_logo:
 		ndlp = lpfc_findnode_did(vport, NameServer_DID);
 		lpfc_nlp_put(ndlp);
 	}
+
+	/* Remove FC host to break driver binding. */
+	fc_remove_host(shost);
+	scsi_remove_host(shost);
 
 	lpfc_cleanup(vport);
 	lpfc_sli_host_down(vport);
