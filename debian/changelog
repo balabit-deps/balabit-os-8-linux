@@ -1,3 +1,29 @@
+linux (5.4.0-205.225) focal; urgency=medium
+
+  * focal/linux: 5.4.0-205.225 -proposed tracker (LP: #2093621)
+
+  * Hold IOPOLL locks when triggering io_uring's deferred work (LP: #2078659) //
+    CVE-2023-21400
+    - io_uring: remove extra check in __io_commit_cqring
+    - io_uring: dont kill fasync under completion_lock
+    - io_uring: ensure IOPOLL locks around deferred work
+
+  * CVE-2024-40967
+    - iopoll: introduce read_poll_timeout macro
+    - iopoll: Introduce read_poll_timeout_atomic macro
+    - serial: imx: Introduce timeout when waiting on transmitter empty
+
+  * CVE-2024-53164
+    - net: sched: fix ordering of qlen adjustment
+
+  * CVE-2024-53141
+    - netfilter: ipset: add missing range check in bitmap_ip_uadt
+
+  * CVE-2024-53103
+    - hv_sock: Initializing vsk->trans to NULL to prevent a dangling pointer
+
+ -- Manuel Diewald <manuel.diewald@canonical.com>  Fri, 10 Jan 2025 22:28:21 +0100
+
 linux (5.4.0-204.224) focal; urgency=medium
 
   * focal/linux: 5.4.0-204.224 -proposed tracker (LP: #2091090)
