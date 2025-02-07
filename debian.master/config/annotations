@@ -8669,6 +8669,9 @@ CONFIG_PROC_CHILDREN                            policy<{'amd64': 'y', 'arm64': '
 CONFIG_PROC_EVENTS                              policy<{'amd64': 'y', 'arm64': 'y', 'armhf': 'y', 'i386': 'y', 'ppc64el': 'y', 's390x': 'y'}>
 CONFIG_PROC_FS                                  policy<{'amd64': 'y', 'arm64': 'y', 'armhf': 'y', 'i386': 'y', 'ppc64el': 'y', 's390x': 'y'}>
 CONFIG_PROC_KCORE                               policy<{'amd64': 'y', 'arm64': 'y', 'i386': 'y', 'ppc64el': 'y', 's390x': 'y'}>
+CONFIG_PROC_MEM_ALWAYS_FORCE                    policy<{'amd64': 'y', 'arm64': 'y', 'armhf': 'y', 'i386': 'y', 'ppc64el': 'y', 's390x': 'y'}>
+CONFIG_PROC_MEM_FORCE_PTRACE                    policy<{'amd64': 'n', 'arm64': 'n', 'armhf': 'n', 'i386': 'n', 'ppc64el': 'n', 's390x': 'n'}>
+CONFIG_PROC_MEM_NO_FORCE                        policy<{'amd64': 'n', 'arm64': 'n', 'armhf': 'n', 'i386': 'n', 'ppc64el': 'n', 's390x': 'n'}>
 CONFIG_PROC_PAGE_MONITOR                        policy<{'amd64': 'y', 'arm64': 'y', 'armhf': 'y', 'i386': 'y', 'ppc64el': 'y', 's390x': 'y'}>
 CONFIG_PROC_PID_ARCH_STATUS                     policy<{'amd64': 'y', 'i386': 'y'}>
 CONFIG_PROC_PID_CPUSET                          policy<{'amd64': 'y', 'arm64': 'y', 'armhf': 'y', 'i386': 'y', 'ppc64el': 'y', 's390x': 'y'}>
@@ -10272,6 +10275,7 @@ CONFIG_SND_MESON_AXG_TDMOUT                     policy<{'arm64': 'm', 'armhf': '
 CONFIG_SND_MESON_AXG_TDM_FORMATTER              policy<{'arm64': 'm', 'armhf': 'm'}>
 CONFIG_SND_MESON_AXG_TDM_INTERFACE              policy<{'arm64': 'm', 'armhf': 'm'}>
 CONFIG_SND_MESON_AXG_TODDR                      policy<{'arm64': 'm', 'armhf': 'm'}>
+CONFIG_SND_MESON_CARD_UTILS                     policy<{'arm64': 'm', 'armhf': 'm'}>
 CONFIG_SND_MESON_CODEC_GLUE                     policy<{'arm64': 'm', 'armhf': 'm'}>
 CONFIG_SND_MESON_G12A_TOHDMITX                  policy<{'arm64': 'm', 'armhf': 'm'}>
 CONFIG_SND_MIA                                  policy<{'amd64': 'm', 'arm64': 'm', 'armhf': 'm', 'i386': 'm', 'ppc64el': 'm'}>

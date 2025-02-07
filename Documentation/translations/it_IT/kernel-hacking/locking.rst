@@ -998,7 +998,7 @@ potreste fare come segue::
 
             while (list) {
                     struct foo *next = list->next;
-                    del_timer(&list->timer);
+                    timer_delete(&list->timer);
                     kfree(list);
                     list = next;
             }
@@ -1011,7 +1011,7 @@ e prenderà il *lock* solo dopo :c:func:`spin_unlock_bh()`, e cercherà
 di eliminare il suo oggetto (che però è già stato eliminato).
 
 Questo può essere evitato controllando il valore di ritorno di
-:c:func:`del_timer()`: se ritorna 1, il temporizzatore è stato già
+:c:func:`timer_delete()`: se ritorna 1, il temporizzatore è stato già
 rimosso. Se 0, significa (in questo caso) che il temporizzatore è in
 esecuzione, quindi possiamo fare come segue::
 
@@ -1020,7 +1020,7 @@ esecuzione, quindi possiamo fare come segue::
 
                     while (list) {
                             struct foo *next = list->next;
-                            if (!del_timer(&list->timer)) {
+                            if (!timer_delete(&list->timer)) {
                                     /* Give timer a chance to delete this */
                                     spin_unlock_bh(&list_lock);
                                     goto retry;
@@ -1034,10 +1034,8 @@ esecuzione, quindi possiamo fare come segue::
 Un altro problema è l'eliminazione dei temporizzatori che si riavviano
 da soli (chiamando :c:func:`add_timer()` alla fine della loro esecuzione).
 Dato che questo è un problema abbastanza comune con una propensione
-alle corse critiche, dovreste usare :c:func:`del_timer_sync()`
-(``include/linux/timer.h``) per gestire questo caso. Questa ritorna il
-numero di volte che il temporizzatore è stato interrotto prima che
-fosse in grado di fermarlo senza che si riavviasse.
+alle corse critiche, dovreste usare :c:func:`timer_delete_sync()`
+(``include/linux/timer.h``) per gestire questo caso.
 
 Velocità della sincronizzazione
 ===============================
@@ -1384,7 +1382,7 @@ contesto, o trattenendo un qualsiasi *lock*.
 
 -  :c:func:`kfree()`
 
--  :c:func:`add_timer()` e :c:func:`del_timer()`
+-  :c:func:`add_timer()` e :c:func:`timer_delete()`
 
 Riferimento per l'API dei Mutex
 ===============================

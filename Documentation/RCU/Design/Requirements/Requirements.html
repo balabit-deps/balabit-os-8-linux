@@ -2342,7 +2342,7 @@ one of its functions results in a segmentation fault.
 The module-unload functions must therefore cancel any
 delayed calls to loadable-module functions, for example,
 any outstanding <tt>mod_timer()</tt> must be dealt with
-via <tt>del_timer_sync()</tt> or similar.
+via <tt>timer_shutdown_sync()</tt> or similar.
 
 <p>
 Unfortunately, there is no way to cancel an RCU callback;
