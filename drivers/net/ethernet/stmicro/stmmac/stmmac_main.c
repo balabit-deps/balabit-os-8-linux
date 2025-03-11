@@ -2707,6 +2707,7 @@ static int stmmac_open(struct net_device *dev)
 		goto irq_error;
 	}
 
+	priv->wol_irq_disabled = true;
 	/* Request the Wake IRQ in case of another line is used for WoL */
 	if (priv->wol_irq != dev->irq) {
 		ret = request_irq(priv->wol_irq, stmmac_interrupt,

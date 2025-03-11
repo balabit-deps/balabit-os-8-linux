@@ -187,6 +187,7 @@ struct cec_adapter {
 	struct list_head wait_queue;
 	struct cec_data *transmitting;
 	bool transmit_in_progress;
+	bool transmit_in_progress_aborted;
 
 	struct task_struct *kthread_config;
 	struct completion config_completion;
@@ -202,6 +203,7 @@ struct cec_adapter {
 
 	u16 phys_addr;
 	bool needs_hpd;
+	bool is_claiming_log_addrs;
 	bool is_configuring;
 	bool is_configured;
 	bool cec_pin_is_high;
